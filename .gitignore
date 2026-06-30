@@ -1,0 +1,22 @@
+# Configuración local de base de datos
+/config/config.env.php
+
+# Dependencias (si se usa Composer en el futuro)
+/vendor/
+
+# Archivos de caché y logs
+*.log
+*.cache
+/scratch/
+
+# Archivos de sistema operativo y editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Archivos temporales
+/tmp/
+/temp/
