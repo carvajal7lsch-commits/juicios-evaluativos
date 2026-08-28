@@ -69,7 +69,7 @@ Pestaña **Domains** del servicio → *Add Domain*:
 
 | Campo | Valor |
 |---|---|
-| Host | `juicios.secarvajal.com` |
+| Host | `juiciosena.secarvajal.com` |
 | Service Name | `app` |
 | Port | `80` |
 | HTTPS | **desactivado** |
@@ -81,10 +81,10 @@ es de nginx, y fallará.
 ### 3.2 En nginx
 
 ```bash
-sudo cp deploy/nginx/juicios.conf /etc/nginx/sites-available/juicios
-sudo ln -s /etc/nginx/sites-available/juicios /etc/nginx/sites-enabled/
+sudo cp deploy/nginx/juicios.conf      /etc/nginx/sites-available/juiciosena.secarvajal.com
+sudo ln -s /etc/nginx/sites-available/juiciosena.secarvajal.com      /etc/nginx/sites-enabled/juiciosena.secarvajal.com
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d juicios.secarvajal.com
+sudo certbot --nginx -d juiciosena.secarvajal.com
 ```
 
 El bloque es el mismo patrón que `lyd` y `smashcode` (`proxy_pass
