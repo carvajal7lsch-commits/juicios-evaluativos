@@ -81,8 +81,9 @@ es de nginx, y fallará.
 ### 3.2 En nginx
 
 ```bash
-sudo cp deploy/nginx/juicios.conf      /etc/nginx/sites-available/juiciosena.secarvajal.com
-sudo ln -s /etc/nginx/sites-available/juiciosena.secarvajal.com      /etc/nginx/sites-enabled/juiciosena.secarvajal.com
+SITE=juiciosena.secarvajal.com
+sudo cp deploy/nginx/juicios.conf /etc/nginx/sites-available/$SITE
+sudo ln -s /etc/nginx/sites-available/$SITE /etc/nginx/sites-enabled/$SITE
 sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d juiciosena.secarvajal.com
 ```
