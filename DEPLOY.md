@@ -36,8 +36,8 @@ docker compose -f docker-compose.dev.yml down    # -v también borra la BD
    - *Repository*: tu repositorio, rama `main`
    - *Compose Path*: dejar vacío — usa `./docker-compose.yml`, que es el de
      producción. **No apuntes a `docker-compose.dev.yml`**: ese publica los
-     puertos 8080/8081/3307 en el host, choca con Traefik y dejaría Adminer y
-     MariaDB abiertos a internet.
+     puertos 8080/8081/3307 abiertos al exterior y dejaría Adminer y MariaDB
+     accesibles desde internet.
 4. Pestaña **Environment**, pegar (con claves reales):
 
    ```
