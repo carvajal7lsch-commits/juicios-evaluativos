@@ -16,8 +16,10 @@ RUN apt-get update \
 # --- Configuración de Apache ------------------------------------
 RUN a2enmod rewrite headers expires
 COPY docker/apache-vhost.conf /etc/apache2/sites-available/000-default.conf
-RUN echo "ServerName localhost" > /etc/apache2/conf-available/servername.conf \
- && a2enconf servername
+COPY docker/apache-security.conf /etc/apache2/conf-available/zz-security.conf
+# configtest aborta el build si la configuracion de Apache no es valida,
+# en vez de dejar que el contenedor arranque y muera en el VPS.
+RUN a2enconf zz-security && apache2ctl configtest
 
 # --- Configuración de PHP ---------------------------------------
 COPY docker/php.ini /usr/local/etc/php/conf.d/99-app.ini
