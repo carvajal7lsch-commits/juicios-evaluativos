@@ -51,49 +51,57 @@ docker compose -f docker-compose.dev.yml down    # -v también borra la BD
 
 ---
 
-## 3. nginx en el VPS (proxy inverso + certificado)
+## 3. Dominio: Dokploy + nginx
 
-El contenedor publica el puerto **9081 solo en `127.0.0.1`**, así que no es
-accesible desde fuera: únicamente nginx del host llega a él.
+El VPS tiene nginx en 80/443 y el Traefik de Dokploy en **9080**. Una petición
+recorre este camino:
+
+```
+navegador -> nginx (TLS, certbot) -> dokploy-traefik (9080) -> contenedor app
+```
+
+Traefik decide a qué contenedor va cada petición leyendo el header `Host`, así
+que hay que configurar las dos piezas.
+
+### 3.1 En Dokploy
+
+Pestaña **Domains** del servicio → *Add Domain*:
+
+| Campo | Valor |
+|---|---|
+| Host | `juicios.secarvajal.com` |
+| Service Name | `app` |
+| Port | `80` |
+| HTTPS | **desactivado** |
+
+HTTPS va desactivado a propósito: el certificado lo pone certbot en nginx. Si
+lo activas aquí, Traefik intentará resolver el reto ACME por el puerto 80, que
+es de nginx, y fallará.
+
+### 3.2 En nginx
 
 ```bash
 sudo cp deploy/nginx/juicios.conf /etc/nginx/sites-available/juicios
 sudo ln -s /etc/nginx/sites-available/juicios /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
-```
-
-Comprobar que el puerto está libre **antes** de desplegar (9080 lo usa Zooki):
-
-```bash
-sudo ss -ltnp | grep 908
-```
-
-Si 9081 estuviera ocupado, cambia el número en `docker-compose.yml`
-(`ports:`) y en `deploy/nginx/juicios.conf` (`proxy_pass`) — los dos.
-
-Con el DNS ya apuntando al VPS, el certificado:
-
-```bash
 sudo certbot --nginx -d juicios.secarvajal.com
 ```
 
-### Dos ajustes que no son opcionales
+El bloque es el mismo patrón que `lyd` y `smashcode` (`proxy_pass
+http://localhost:9080` conservando `Host`), con un añadido que sí importa:
 
-Están ya en `deploy/nginx/juicios.conf`, pero conviene saber por qué:
-
-- `client_max_body_size 64M;` — el límite por defecto de nginx es **1 MB**.
-  La importación de Sofía Plus manda el reporte entero en un POST JSON y sin
-  esto responde **413** en cuanto la ficha tiene algo de tamaño.
-- `proxy_read_timeout 300s;` — el defecto de nginx son 60s y PHP admite hasta
-  300s. Sin esto, una importación larga corta con **504** aunque por dentro
-  siguiera funcionando.
+- `client_max_body_size 64M;` — nginx es el primero en recibir el POST de la
+  importación de Sofía Plus y su límite por defecto es **1 MB**: sin esto
+  responde **413** antes de que la petición llegue a Traefik.
+- `proxy_read_timeout 300s;` — el defecto son 60s y PHP admite hasta 300s; sin
+  esto una importación larga corta con **504**.
 
 ### Redes
 
-`app` se une a `dokploy-network` (la red externa que Dokploy ya creó en el VPS)
-para que Dokploy gestione el servicio con normalidad, aunque el tráfico web no
-entre por ahí sino por nginx. `db` vive solo en la red `internal` y **no expone
-ningún puerto**: únicamente `app` la alcanza.
+`app` se une a `dokploy-network`, que es por donde Traefik lo alcanza: sin esa
+red el dominio no resuelve por mucho que esté bien configurado en la UI. `db`
+vive solo en la red `internal`. **Ningún servicio publica puertos en el host**,
+igual que el resto de tus apps de Dokploy.
 
 ---
 
@@ -146,7 +154,7 @@ tus credenciales locales nunca entran en la imagen.
 ## 6. Notas de seguridad
 
 - Apache bloquea por HTTP las rutas `/config`, `/sql`, `/scratch`, `/docker` y `/.git`.
-- El contenedor solo escucha en `127.0.0.1:9081`; MariaDB no publica puertos.
+- Ningún contenedor publica puertos en el host; solo Traefik llega a la app.
 - `display_errors = Off`; los errores van a los logs del contenedor.
 - El error de conexión a BD ya no filtra el mensaje de PDO al cliente.
 - **La autenticación está desactivada**: `index.php` redirige directo al

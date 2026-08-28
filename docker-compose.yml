@@ -9,12 +9,16 @@
 #   1. Crear servicio tipo "Compose" apuntando a este repositorio.
 #   2. Compose Path: dejar vacío (./docker-compose.yml).
 #   3. Cargar las variables de entorno (ver .env.example).
-#   4. El dominio NO se configura en Dokploy: lo sirve nginx del host
-#      (ver deploy/nginx/juicios.conf).
+#   4. En "Domains" añadir el dominio -> service: app, port: 80, HTTPS
+#      DESACTIVADO (el certificado lo pone certbot en nginx, no Traefik).
+#   5. Crear el site de nginx (ver deploy/nginx/juicios.conf).
 #
-# El servicio 'app' publica el puerto 9081 SOLO en 127.0.0.1: nginx del
-# host hace de proxy inverso hacia él y certbot gestiona el certificado.
-# El servicio 'db' queda aislado en la red interna, sin exposición alguna.
+# Ningún servicio publica puertos en el host. El camino es:
+#
+#   nginx (80/443, certbot)  ->  dokploy-traefik (9080)  ->  app (80)
+#
+# nginx conserva el header Host, Traefik lo usa para elegir el contenedor
+# según el dominio configurado en Dokploy. 'db' solo la alcanza 'app'.
 # ================================================================
 
 services:
@@ -29,13 +33,6 @@ services:
       DB_USER: ${DB_USER}
       DB_PASS: ${DB_PASS}
       DB_CHARSET: utf8mb4
-    ports:
-      # El puerto del host se elige con APP_PORT (variable de entorno en
-      # Dokploy). No puede ser uno ya ocupado: el contenedor trae su propio
-      # Apache, así que necesita un puerto para él solo.
-      # 127.0.0.1 es imprescindible: sin esa IP, Docker abre el puerto a
-      # internet saltándose las reglas de UFW.
-      - "127.0.0.1:${APP_PORT:-9081}:80"
     depends_on:
       db:
         condition: service_healthy
@@ -75,8 +72,8 @@ volumes:
   db_data:
 
 networks:
-  # Red de Dokploy. El tráfico web no entra por aquí (lo trae nginx), pero
-  # se mantiene para que Dokploy gestione el servicio con normalidad.
+  # Red de Dokploy: por aquí Traefik alcanza al contenedor. Sin esto el
+  # dominio no resuelve por mucho que se configure en la UI.
   dokploy-network:
     external: true
   # Red privada app <-> base de datos
