@@ -20,3 +20,8 @@ Thumbs.db
 # Archivos temporales
 /tmp/
 /temp/
+
+# Variables de entorno (Docker / Dokploy)
+.env
+.env.local
+!.env.example

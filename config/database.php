@@ -1,13 +1,36 @@
 <?php
 // ================================================================
 // Conexión a la base de datos — PDO
+//
+// Orden de resolución de la configuración:
+//   1. config/config.env.php  (desarrollo local, ignorado por Git)
+//   2. Variables de entorno   (Docker / Dokploy)
+// Lo que no defina el archivo local se completa con el entorno.
 // ================================================================
 
 $envPath = __DIR__ . '/config.env.php';
 if (file_exists($envPath)) {
     require_once $envPath;
-} else {
-    die("Error: El archivo de configuración config.env.php no existe. Por favor, cópialo de config.env.example.php y configúralo.");
+}
+
+// --- Relleno desde variables de entorno -------------------------
+$envDefaults = [
+    'DB_HOST'    => 'localhost',
+    'DB_NAME'    => 'juicios_evaluativos',
+    'DB_USER'    => 'root',
+    'DB_PASS'    => '',
+    'DB_CHARSET' => 'utf8mb4',
+];
+
+foreach ($envDefaults as $key => $default) {
+    if (defined($key)) {
+        continue;
+    }
+    $value = getenv($key);
+    if ($value === false || $value === '') {
+        $value = $_ENV[$key] ?? $default;
+    }
+    define($key, $value);
 }
 
 function getDB(): PDO {
@@ -22,8 +45,9 @@ function getDB(): PDO {
         try {
             $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
         } catch (PDOException $e) {
+            error_log('Error de conexión a la base de datos: ' . $e->getMessage());
             http_response_code(500);
-            die(json_encode(['error' => 'Error de conexión a la base de datos: ' . $e->getMessage()]));
+            die(json_encode(['error' => 'Error de conexión a la base de datos']));
         }
     }
     return $pdo;

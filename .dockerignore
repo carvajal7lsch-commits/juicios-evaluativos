@@ -1,0 +1,33 @@
+# Control de versiones
+.git
+.gitignore
+.gitattributes
+
+# Credenciales locales — NUNCA deben entrar en la imagen
+config/config.env.php
+.env
+.env.*
+!.env.example
+
+# Scripts de desarrollo / volcados
+scratch/
+*.log
+*.cache
+
+# Editores y SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Artefactos de Docker (no hacen falta dentro de la imagen)
+docker-compose.yml
+docker-compose.*.yml
+Dockerfile
+.dockerignore
+
+# Documentación
+README.md
+DEPLOY.md
