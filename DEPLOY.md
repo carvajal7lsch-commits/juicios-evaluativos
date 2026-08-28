@@ -47,25 +47,57 @@ docker compose -f docker-compose.dev.yml down    # -v también borra la BD
    DB_ROOT_PASS=<otra-clave-fuerte>
    ```
 
-5. Pestaña **Domains** → *Add Domain*:
-   - Host: `juicios.tudominio.com`
-   - **Service Name**: `app`
-   - **Port**: `80`
-   - HTTPS: activado, certificado *Let's Encrypt*
-6. **Deploy**.
-
-> El DNS del dominio debe apuntar (registro `A`) a la IP del VPS **antes** de
-> pedir el certificado, o Let's Encrypt fallará.
-
-### Por qué `dokploy-network`
-
-El servicio `app` se une a `dokploy-network` (red externa que Dokploy ya creó en
-el VPS) para que Traefik pueda enrutarlo. `db` vive solo en la red `internal` y
-**no expone ningún puerto** al exterior: únicamente `app` la alcanza.
+5. **Deploy**.
 
 ---
 
-## 3. Base de datos
+## 3. nginx en el VPS (proxy inverso + certificado)
+
+El contenedor publica el puerto **9081 solo en `127.0.0.1`**, así que no es
+accesible desde fuera: únicamente nginx del host llega a él.
+
+```bash
+sudo cp deploy/nginx/juicios.conf /etc/nginx/sites-available/juicios
+sudo ln -s /etc/nginx/sites-available/juicios /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Comprobar que el puerto está libre **antes** de desplegar (9080 lo usa Zooki):
+
+```bash
+sudo ss -ltnp | grep 908
+```
+
+Si 9081 estuviera ocupado, cambia el número en `docker-compose.yml`
+(`ports:`) y en `deploy/nginx/juicios.conf` (`proxy_pass`) — los dos.
+
+Con el DNS ya apuntando al VPS, el certificado:
+
+```bash
+sudo certbot --nginx -d juicios.secarvajal.com
+```
+
+### Dos ajustes que no son opcionales
+
+Están ya en `deploy/nginx/juicios.conf`, pero conviene saber por qué:
+
+- `client_max_body_size 64M;` — el límite por defecto de nginx es **1 MB**.
+  La importación de Sofía Plus manda el reporte entero en un POST JSON y sin
+  esto responde **413** en cuanto la ficha tiene algo de tamaño.
+- `proxy_read_timeout 300s;` — el defecto de nginx son 60s y PHP admite hasta
+  300s. Sin esto, una importación larga corta con **504** aunque por dentro
+  siguiera funcionando.
+
+### Redes
+
+`app` se une a `dokploy-network` (la red externa que Dokploy ya creó en el VPS)
+para que Dokploy gestione el servicio con normalidad, aunque el tráfico web no
+entre por ahí sino por nginx. `db` vive solo en la red `internal` y **no expone
+ningún puerto**: únicamente `app` la alcanza.
+
+---
+
+## 4. Base de datos
 
 Los scripts de `sql/` se montan en `/docker-entrypoint-initdb.d/` y se ejecutan
 **una sola vez**, cuando el volumen `db_data` está vacío:
@@ -99,7 +131,7 @@ Recomendado: programar ese comando en un cron del VPS, o usar el módulo de
 
 ---
 
-## 4. Configuración
+## 5. Configuración
 
 | Origen | Cuándo se usa | Prioridad |
 |--------|---------------|-----------|
@@ -111,9 +143,10 @@ tus credenciales locales nunca entran en la imagen.
 
 ---
 
-## 5. Notas de seguridad
+## 6. Notas de seguridad
 
 - Apache bloquea por HTTP las rutas `/config`, `/sql`, `/scratch`, `/docker` y `/.git`.
+- El contenedor solo escucha en `127.0.0.1:9081`; MariaDB no publica puertos.
 - `display_errors = Off`; los errores van a los logs del contenedor.
 - El error de conexión a BD ya no filtra el mensaje de PDO al cliente.
 - **La autenticación está desactivada**: `index.php` redirige directo al

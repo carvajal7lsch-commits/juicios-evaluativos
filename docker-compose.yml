@@ -9,11 +9,12 @@
 #   1. Crear servicio tipo "Compose" apuntando a este repositorio.
 #   2. Compose Path: dejar vacío (./docker-compose.yml).
 #   3. Cargar las variables de entorno (ver .env.example).
-#   4. En "Domains" añadir el dominio -> service: app, port: 80.
+#   4. El dominio NO se configura en Dokploy: lo sirve nginx del host
+#      (ver deploy/nginx/juicios.conf).
 #
-# El servicio 'app' NO publica puertos: el tráfico entra por Traefik
-# a través de la red 'dokploy-network'. El servicio 'db' queda aislado
-# en la red interna, sin exposición al exterior.
+# El servicio 'app' publica el puerto 9081 SOLO en 127.0.0.1: nginx del
+# host hace de proxy inverso hacia él y certbot gestiona el certificado.
+# El servicio 'db' queda aislado en la red interna, sin exposición alguna.
 # ================================================================
 
 services:
@@ -28,6 +29,10 @@ services:
       DB_USER: ${DB_USER}
       DB_PASS: ${DB_PASS}
       DB_CHARSET: utf8mb4
+    ports:
+      # 127.0.0.1 es imprescindible: sin esa IP, Docker abre el puerto a
+      # internet saltándose las reglas de UFW.
+      - "127.0.0.1:9081:80"
     depends_on:
       db:
         condition: service_healthy
@@ -35,13 +40,6 @@ services:
       - dokploy-network
       - internal
     labels:
-      # Dokploy genera estas etiquetas al añadir el dominio desde la UI.
-      # Descoméntalas solo si prefieres configurar Traefik a mano.
-      # - "traefik.enable=true"
-      # - "traefik.http.routers.juicios.rule=Host(`juicios.tudominio.com`)"
-      # - "traefik.http.routers.juicios.entrypoints=websecure"
-      # - "traefik.http.routers.juicios.tls.certresolver=letsencrypt"
-      # - "traefik.http.services.juicios.loadbalancer.server.port=80"
       - "app=juicios-evaluativos"
 
   db:
@@ -74,7 +72,8 @@ volumes:
   db_data:
 
 networks:
-  # Red creada por Dokploy en el VPS: por aquí entra Traefik
+  # Red de Dokploy. El tráfico web no entra por aquí (lo trae nginx), pero
+  # se mantiene para que Dokploy gestione el servicio con normalidad.
   dokploy-network:
     external: true
   # Red privada app <-> base de datos
