@@ -30,9 +30,12 @@ services:
       DB_PASS: ${DB_PASS}
       DB_CHARSET: utf8mb4
     ports:
+      # El puerto del host se elige con APP_PORT (variable de entorno en
+      # Dokploy). No puede ser uno ya ocupado: el contenedor trae su propio
+      # Apache, así que necesita un puerto para él solo.
       # 127.0.0.1 es imprescindible: sin esa IP, Docker abre el puerto a
       # internet saltándose las reglas de UFW.
-      - "127.0.0.1:9081:80"
+      - "127.0.0.1:${APP_PORT:-9081}:80"
     depends_on:
       db:
         condition: service_healthy
