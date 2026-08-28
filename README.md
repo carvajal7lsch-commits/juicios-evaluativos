@@ -14,11 +14,14 @@ Sistema web para la gestión de juicios evaluativos (SENA).
 - `sql/`: Scripts de base de datos.
 - `docker/`: Configuración de Apache y PHP para el contenedor.
 
+Compose: `docker-compose.yml` es el de **producción** (el que despliega Dokploy)
+y `docker-compose.dev.yml` el de **desarrollo local**.
+
 ## Opción A — Docker (recomendado)
 
 ```bash
 cp .env.example .env      # ajusta las claves
-docker compose up -d --build
+docker compose -f docker-compose.dev.yml up -d --build
 ```
 
 - App: http://localhost:8080

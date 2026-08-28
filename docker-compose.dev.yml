@@ -1,0 +1,81 @@
+# ================================================================
+# Juicios Evaluativos — Entorno LOCAL de desarrollo/pruebas
+#
+# NO se usa en el VPS: publica puertos directamente en el host y levanta
+# Adminer sin protección. En producción manda docker-compose.yml.
+#
+#   docker compose -f docker-compose.dev.yml up -d --build
+#   App:        http://localhost:8080
+#   Adminer:    http://localhost:8081
+# Para producción en el VPS se usa docker-compose.yml
+# ================================================================
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: juicios_app
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      DB_HOST: db
+      DB_NAME: ${DB_NAME:-juicios_evaluativos}
+      DB_USER: ${DB_USER:-juicios}
+      DB_PASS: ${DB_PASS:-juicios_dev}
+      DB_CHARSET: utf8mb4
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - juicios_net
+
+  db:
+    image: mariadb:11.4
+    container_name: juicios_db
+    restart: unless-stopped
+    ports:
+      - "3307:3306"
+    environment:
+      MARIADB_DATABASE: ${DB_NAME:-juicios_evaluativos}
+      MARIADB_USER: ${DB_USER:-juicios}
+      MARIADB_PASSWORD: ${DB_PASS:-juicios_dev}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASS:-root_dev}
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - db_data:/var/lib/mysql
+      # Se ejecutan una sola vez, en orden, cuando el volumen está vacío
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./sql/migracion_programa_resultado.sql:/docker-entrypoint-initdb.d/02-migracion.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - juicios_net
+
+  # Opcional: interfaz web para inspeccionar la BD en local
+  adminer:
+    image: adminer:latest
+    container_name: juicios_adminer
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    depends_on:
+      - db
+    networks:
+      - juicios_net
+
+volumes:
+  db_data:
+
+networks:
+  juicios_net:
+    driver: bridge

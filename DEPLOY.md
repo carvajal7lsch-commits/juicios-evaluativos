@@ -9,7 +9,7 @@ imagen simplemente copia el código y sirve con Apache.
 
 ```bash
 cp .env.example .env        # ajusta las claves
-docker compose up -d --build
+docker compose -f docker-compose.dev.yml up -d --build
 ```
 
 | Servicio | URL                     |
@@ -22,8 +22,8 @@ Comprobaciones rápidas:
 
 ```bash
 curl http://localhost:8080/health.php     # -> {"status":"ok","db":"up"}
-docker compose logs -f app
-docker compose down                       # -v también borra la BD
+docker compose -f docker-compose.dev.yml logs -f app
+docker compose -f docker-compose.dev.yml down    # -v también borra la BD
 ```
 
 ---
@@ -34,7 +34,10 @@ docker compose down                       # -v también borra la BD
 2. En Dokploy: **Create Application → Compose**.
 3. Configurar:
    - *Repository*: tu repositorio, rama `main`
-   - *Compose Path*: `docker-compose.dokploy.yml`
+   - *Compose Path*: dejar vacío — usa `./docker-compose.yml`, que es el de
+     producción. **No apuntes a `docker-compose.dev.yml`**: ese publica los
+     puertos 8080/8081/3307 en el host, choca con Traefik y dejaría Adminer y
+     MariaDB abiertos a internet.
 4. Pestaña **Environment**, pegar (con claves reales):
 
    ```

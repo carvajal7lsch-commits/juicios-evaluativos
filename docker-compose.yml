@@ -1,9 +1,19 @@
 # ================================================================
-# Juicios Evaluativos — Entorno LOCAL de desarrollo/pruebas
-#   docker compose up -d --build
-#   App:        http://localhost:8080
-#   Adminer:    http://localhost:8081
-# Para producción en el VPS usa docker-compose.dokploy.yml
+# Juicios Evaluativos — PRODUCCIÓN en VPS con Dokploy
+#
+# Este es el archivo POR DEFECTO: Dokploy lo toma sin tocar "Compose Path".
+# Para levantar el entorno local usa docker-compose.dev.yml:
+#   docker compose -f docker-compose.dev.yml up -d --build
+#
+# En Dokploy:
+#   1. Crear servicio tipo "Compose" apuntando a este repositorio.
+#   2. Compose Path: dejar vacío (./docker-compose.yml).
+#   3. Cargar las variables de entorno (ver .env.example).
+#   4. En "Domains" añadir el dominio -> service: app, port: 80.
+#
+# El servicio 'app' NO publica puertos: el tráfico entra por Traefik
+# a través de la red 'dokploy-network'. El servicio 'db' queda aislado
+# en la red interna, sin exposición al exterior.
 # ================================================================
 
 services:
@@ -11,39 +21,44 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: juicios_app
     restart: unless-stopped
-    ports:
-      - "8080:80"
     environment:
       DB_HOST: db
-      DB_NAME: ${DB_NAME:-juicios_evaluativos}
-      DB_USER: ${DB_USER:-juicios}
-      DB_PASS: ${DB_PASS:-juicios_dev}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
       DB_CHARSET: utf8mb4
     depends_on:
       db:
         condition: service_healthy
     networks:
-      - juicios_net
+      - dokploy-network
+      - internal
+    labels:
+      # Dokploy genera estas etiquetas al añadir el dominio desde la UI.
+      # Descoméntalas solo si prefieres configurar Traefik a mano.
+      # - "traefik.enable=true"
+      # - "traefik.http.routers.juicios.rule=Host(`juicios.tudominio.com`)"
+      # - "traefik.http.routers.juicios.entrypoints=websecure"
+      # - "traefik.http.routers.juicios.tls.certresolver=letsencrypt"
+      # - "traefik.http.services.juicios.loadbalancer.server.port=80"
+      - "app=juicios-evaluativos"
 
   db:
     image: mariadb:11.4
-    container_name: juicios_db
     restart: unless-stopped
-    ports:
-      - "3307:3306"
     environment:
-      MARIADB_DATABASE: ${DB_NAME:-juicios_evaluativos}
-      MARIADB_USER: ${DB_USER:-juicios}
-      MARIADB_PASSWORD: ${DB_PASS:-juicios_dev}
-      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASS:-root_dev}
+      MARIADB_DATABASE: ${DB_NAME}
+      MARIADB_USER: ${DB_USER}
+      MARIADB_PASSWORD: ${DB_PASS}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASS}
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
     volumes:
       - db_data:/var/lib/mysql
-      # Se ejecutan una sola vez, en orden, cuando el volumen está vacío
+      # Solo se ejecutan la PRIMERA vez (volumen vacío). En despliegues
+      # posteriores se ignoran y los datos existentes se conservan.
       - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./sql/migracion_programa_resultado.sql:/docker-entrypoint-initdb.d/02-migracion.sql:ro
     healthcheck:
@@ -53,25 +68,15 @@ services:
       retries: 10
       start_period: 30s
     networks:
-      - juicios_net
-
-  # Opcional: interfaz web para inspeccionar la BD en local
-  adminer:
-    image: adminer:latest
-    container_name: juicios_adminer
-    restart: unless-stopped
-    ports:
-      - "8081:8080"
-    environment:
-      ADMINER_DEFAULT_SERVER: db
-    depends_on:
-      - db
-    networks:
-      - juicios_net
+      - internal
 
 volumes:
   db_data:
 
 networks:
-  juicios_net:
+  # Red creada por Dokploy en el VPS: por aquí entra Traefik
+  dokploy-network:
+    external: true
+  # Red privada app <-> base de datos
+  internal:
     driver: bridge
