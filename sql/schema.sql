@@ -140,7 +140,10 @@ CREATE TABLE IF NOT EXISTS `juicios_evaluativos` (
     `id_resultado`          INTEGER UNSIGNED NOT NULL,
     `documento_funcionario` VARCHAR(255) NOT NULL,
     `estado`                VARCHAR(255) NOT NULL DEFAULT 'Pendiente',
-    `fecha_registro`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Admite NULL a proposito: un juicio importado de Sofia Plus sin fecha
+    -- no debe inventarse una. El DEFAULT sigue aplicando cuando la columna
+    -- se omite, que es como inserta api/juicios.php.
+    `fecha_registro`        DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY(`id_juicio`),
     UNIQUE KEY `uq_aprendiz_resultado` (`documento_aprendiz`, `id_resultado`),
     CONSTRAINT `fk_j_aprendiz`

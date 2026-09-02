@@ -113,6 +113,7 @@ Los scripts de `sql/` se montan en `/docker-entrypoint-initdb.d/` y se ejecutan
 
 1. `01-schema.sql` → crea la BD y las tablas
 2. `02-migracion.sql` → tabla `programa_resultado`
+3. `03-fecha-nullable.sql` → `fecha_registro` pasa a admitir NULL
 
 En despliegues posteriores se ignoran y **los datos se conservan** (el volumen
 persiste). Ojo: `schema.sql` contiene `DROP TABLE IF EXISTS`, así que no lo

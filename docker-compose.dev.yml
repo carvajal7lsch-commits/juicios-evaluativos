@@ -50,6 +50,7 @@ services:
       # Se ejecutan una sola vez, en orden, cuando el volumen está vacío
       - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./sql/migracion_programa_resultado.sql:/docker-entrypoint-initdb.d/02-migracion.sql:ro
+      - ./sql/migracion_fecha_registro_nullable.sql:/docker-entrypoint-initdb.d/03-fecha-nullable.sql:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
