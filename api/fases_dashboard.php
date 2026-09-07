@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/estados.php';
 
 $action = $_GET['action'] ?? '';
 $db = getDB();
@@ -60,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             FROM fases_proyecto f
             JOIN actividades_proyecto ap ON f.id_fase = ap.id_fase
             JOIN actividad_resultado ar ON ap.id_actividad = ar.id_actividad
-            JOIN Aprendiz a ON a.ficha = ? AND a.estado = 'Activo'
+            JOIN Aprendiz a ON a.ficha = ? AND " . sqlAprendizActivo() . "
             LEFT JOIN juicios_evaluativos je ON je.documento_aprendiz = a.documento AND je.id_resultado = ar.id_resultado
             WHERE f.id_programa = ?
             GROUP BY f.id_fase, a.documento
@@ -85,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         
         // Si hay aprendices sin RAPs registrados pero la consulta no los trajo (por el JOIN):
         // Debemos asegurarnos de contar a todos los activos
-        $stmtActivos = $db->prepare("SELECT COUNT(*) FROM Aprendiz WHERE ficha = ? AND estado = 'Activo'");
+        $stmtActivos = $db->prepare("SELECT COUNT(*) FROM Aprendiz a WHERE a.ficha = ? AND " . sqlAprendizActivo());
         $stmtActivos->execute([$ficha]);
         $totalActivos = (int)$stmtActivos->fetchColumn();
         
