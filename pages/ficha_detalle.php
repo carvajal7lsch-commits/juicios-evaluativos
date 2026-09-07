@@ -3,853 +3,830 @@ define('ROOT_PATH', dirname(__DIR__));
 $ficha = $_GET['ficha'] ?? '';
 if (!$ficha) { header('Location: fichas.php'); exit; }
 
-$pageTitle    = 'Detalle de Ficha: ' . htmlspecialchars($ficha);
-$pageSubtitle = 'Panel de control centralizado para la ficha de formación';
-$activePage   = 'fichas'; // Keep the sidebar highlight on Fichas
+$pageTitle    = 'Ficha ' . $ficha;
+$pageSubtitle = 'Panel de control centralizado de la ficha de formación';
+$activePage   = 'fichas';
+
+require_once ROOT_PATH . '/assets/icons.php';
+$pageActions = '
+  <button class="btn btn-outline btn-sm" onclick="openImportModal()">' . icon('upload') . ' Importar CSV</button>
+  <button class="btn btn-primary btn-sm" onclick="openRegistroModal()">' . icon('pencil') . ' Registrar juicio</button>';
+
 require_once ROOT_PATH . '/includes/header.php';
 ?>
 
-<style>
-  .hero-ficha {
-    background: linear-gradient(135deg, rgba(26,77,181,0.08), rgba(0,166,80,0.05));
-    border: 1px solid rgba(26,77,181,0.2);
-    border-radius: var(--radius-lg);
-    padding: 32px;
-    margin-bottom: 24px;
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 24px;
-  }
-  .hf-title { font-size: 28px; font-weight: 800; color: var(--sena-blue); letter-spacing: -0.02em; margin-bottom: 4px; font-family: monospace;}
-  .hf-subtitle { font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;}
-  .hf-meta { display: flex; gap: 16px; font-size: 13px; color: var(--text-secondary); flex-wrap: wrap; }
-  .hf-meta div { display: flex; align-items: center; gap: 6px; }
-  
-  .stat-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    padding: 16px 24px;
-    border-radius: var(--radius-md);
-    min-width: 140px;
-    text-align: center;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.02);
-  }
-  .stat-val { font-size: 24px; font-weight: 800; color: var(--text-primary); }
-  .stat-lbl { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-top: 4px; }
-
-  .status-pill {
-    display: inline-flex;
-    align-items: center;
-    padding: 6px 14px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 50px;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: 0.2s;
-    user-select: none;
-    color: var(--text-secondary);
-    gap: 6px;
-  }
-  .status-pill:hover {
-    border-color: var(--sena-blue);
-    background: rgba(26,77,181,0.05);
-  }
-  .status-pill.active {
-    background: var(--sena-blue);
-    color: white;
-    border-color: var(--sena-blue);
-    box-shadow: 0 4px 10px rgba(26,77,181,0.3);
-  }
-</style>
-
-<!-- HEADER HERO -->
-<div class="hero-ficha fade-in" id="hero-meta" style="display:none;">
-  <div>
-    <div style="display:flex; align-items:center; gap:12px;">
-      <div class="hf-title" id="hf-ficha"></div>
-      <span class="badge" id="hf-estado" style="font-size:12px; padding:6px 12px;"></span>
+<!-- ══ CABECERA DE LA FICHA ══ -->
+<div class="hero-ficha mb-5" id="hero-meta" hidden>
+  <div class="hf-main">
+    <div class="cluster-sm">
+      <span class="hf-ficha mono" id="hf-ficha"></span>
+      <span class="badge" id="hf-estado"></span>
     </div>
-    <div class="hf-subtitle" id="hf-programa"></div>
-    <div class="hf-meta">
-      <div>📅 <span id="hf-fechas"></span></div>
-      <div>📍 <span id="hf-modalidad"></span></div>
+    <div class="hf-programa" id="hf-programa"></div>
+    <div class="cluster text-sm text-secondary" style="margin-top:8px">
+      <span><?= icon('calendar') ?> <span id="hf-fechas"></span></span>
+      <span><?= icon('map-pin') ?> <span id="hf-modalidad"></span></span>
     </div>
   </div>
-  
-  <div style="display:flex; gap:16px; flex-wrap:wrap;">
-    <div class="stat-card">
-      <div class="stat-val" id="stat-aprendices" style="color:var(--sena-blue-lt);">0</div>
-      <div class="stat-lbl">Aprendices</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-val" id="stat-competencias" style="color:var(--warning);">0</div>
-      <div class="stat-lbl">Competencias</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-val" id="stat-resultados" style="color:var(--info);">0</div>
-      <div class="stat-lbl">RAPs Totales</div>
-    </div>
+  <div class="hf-stats">
+    <div class="hf-stat"><div class="hf-stat-val text-brand" id="stat-aprendices">0</div><div class="hf-stat-lbl">Aprendices</div></div>
+    <div class="hf-stat"><div class="hf-stat-val text-warning" id="stat-competencias">0</div><div class="hf-stat-lbl">Competencias</div></div>
+    <div class="hf-stat"><div class="hf-stat-val text-info" id="stat-resultados">0</div><div class="hf-stat-lbl">RAPs totales</div></div>
   </div>
 </div>
 
-<div class="tabs fade-in">
-  <button id="tab-btn-aprendices" class="tab active" onclick="switchTab('tab-aprendices',this)">👥 Aprendices</button>
-  <button id="tab-btn-competencias" class="tab" onclick="switchTab('tab-competencias',this)">📚 Programa y Resultados</button>
-  <button id="tab-btn-juicios" class="tab" onclick="switchTab('tab-juicios',this)">📝 Juicios Evaluativos</button>
+<div class="tabs mb-5" role="tablist">
+  <button id="tab-btn-aprendices" class="tab active" role="tab" onclick="switchTab('tab-aprendices',this)"><?= icon('users') ?> Aprendices</button>
+  <button id="tab-btn-competencias" class="tab" role="tab" onclick="switchTab('tab-competencias',this)"><?= icon('book') ?> Programa y Resultados</button>
+  <button id="tab-btn-juicios" class="tab" role="tab" onclick="switchTab('tab-juicios',this)"><?= icon('file-pen') ?> Juicios Evaluativos</button>
 </div>
 
-<!-- TAB APRENDICES -->
-<div id="tab-aprendices" class="tab-content active fade-in">
-  <div class="card">
-    <div class="card-header" style="padding-bottom:16px; flex-wrap:wrap; gap:16px;">
-      <div class="card-title" style="font-size:16px; min-width: 150px;">Listado de Aprendices</div>
-      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; flex:1;">
-        <span style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Estados:</span>
-        <div id="filter-pills-aprendices" style="display:flex; gap:8px; flex-wrap:wrap;">
-          <!-- Se cargan dinámicamente -->
-        </div>
-      </div>
-      <div style="width:250px; position:relative;">
-        <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-muted);">🔍</span>
-        <input type="text" id="search-aprendices" class="form-control" placeholder="Buscar por nombre o doc..." style="padding-left:36px;" oninput="filterAprendices()" />
+<!-- ══ TAB: APRENDICES ══ -->
+<div id="tab-aprendices" class="tab-content active">
+  <div class="toolbar mb-4">
+    <span class="toolbar-label">Estado</span>
+    <div class="cluster-sm" id="filter-pills-aprendices"></div>
+    <div class="search-field push-right" style="max-width:280px">
+      <?= icon('search') ?>
+      <input type="text" id="search-aprendices" class="form-control" placeholder="Buscar por nombre o documento…"
+             oninput="filterAprendices()" aria-label="Buscar aprendiz" />
+    </div>
+  </div>
+
+  <div class="card card-flush">
+    <div class="card-header">
+      <div>
+        <div class="card-title"><?= icon('users') ?> Listado de Aprendices</div>
+        <div class="card-subtitle" id="aprendices-count">Cargando…</div>
       </div>
     </div>
-    <div class="table-wrap">
+    <div class="table-wrap is-scrollable">
       <table class="table">
-        <thead><tr><th>Nombre completo</th><th>Documento</th><th>Estado</th><th style="width:180px;">Avance Individual</th><th>Acciones</th></tr></thead>
-        <tbody id="tbody-aprendices"><tr><td colspan="5" style="text-align:center;padding:32px;"><span class="spinner"></span></td></tr></tbody>
+        <thead>
+          <tr><th>Nombre completo</th><th>Documento</th><th>Estado</th><th style="width:200px">Avance individual</th><th class="col-actions"></th></tr>
+        </thead>
+        <tbody id="tbody-aprendices">
+          <tr><td colspan="5"><span class="skeleton skeleton-row"></span></td></tr>
+          <tr><td colspan="5"><span class="skeleton skeleton-row"></span></td></tr>
+          <tr><td colspan="5"><span class="skeleton skeleton-row"></span></td></tr>
+        </tbody>
       </table>
     </div>
   </div>
 </div>
 
-<!-- TAB COMPETENCIAS -->
-<div id="tab-competencias" class="tab-content fade-in">
-  <div class="card">
-    <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; padding-bottom:16px;">
-      <div class="card-title" style="font-size:16px;">Competencias y Resultados</div>
-      <div style="width:350px; position:relative;">
-        <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-muted);">🔍</span>
-        <input type="text" id="search-competencias" class="form-control" placeholder="Buscar por competencia o código de resultado..." style="padding-left:36px;" oninput="filterCompetencias()" />
-      </div>
+<!-- ══ TAB: COMPETENCIAS ══ -->
+<div id="tab-competencias" class="tab-content">
+  <div class="toolbar mb-4">
+    <div class="search-field">
+      <?= icon('search') ?>
+      <input type="text" id="search-competencias" class="form-control"
+             placeholder="Buscar por competencia, código o resultado de aprendizaje…"
+             oninput="filterCompetencias()" aria-label="Buscar competencia" />
     </div>
-    <div class="table-wrap">
+    <span class="text-sm text-secondary" id="competencias-count"></span>
+  </div>
+
+  <div class="card card-flush">
+    <div class="table-wrap is-scrollable">
       <table class="table">
-        <thead><tr><th>Competencia / Resultado</th><th>Código</th><th style="width:250px;">Avance de la Ficha (Activos)</th></tr></thead>
-        <tbody id="tbody-competencias"><tr><td colspan="3" style="text-align:center;padding:32px;"><span class="spinner"></span></td></tr></tbody>
+        <thead>
+          <tr><th>Competencia / Resultado</th><th style="width:130px">Código</th><th style="width:230px">Avance de la ficha (activos)</th></tr>
+        </thead>
+        <tbody id="tbody-competencias">
+          <tr><td colspan="3"><span class="skeleton skeleton-row"></span></td></tr>
+          <tr><td colspan="3"><span class="skeleton skeleton-row"></span></td></tr>
+        </tbody>
       </table>
     </div>
   </div>
 </div>
 
-<!-- TAB JUICIOS -->
-<div id="tab-juicios" class="tab-content fade-in">
-  <!-- 1. KPIs de Gestión -->
-  <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap:16px; margin-bottom:24px;">
-    <div class="kpi-card" style="--kpi-color: var(--danger); background: rgba(218,54,51,0.05);">
-      <div class="kpi-icon">⚠️</div>
-      <div class="kpi-value" id="radar-riesgo-count">0</div>
-      <div class="kpi-label">Aprendices en Riesgo Crítico</div>
-      <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Progreso menor al 30%</div>
+<!-- ══ TAB: JUICIOS ══ -->
+<div id="tab-juicios" class="tab-content">
+  <div class="kpi-grid mb-5">
+    <div class="kpi-card" style="--kpi-color:var(--danger-solid)">
+      <div class="kpi-icon"><?= icon('alert-triangle') ?></div>
+      <div class="kpi-body">
+        <div class="kpi-value" id="radar-riesgo-count">0</div>
+        <div class="kpi-label">Aprendices en riesgo crítico</div>
+        <div class="kpi-trend">Progreso menor al 30%</div>
+      </div>
     </div>
-    <div class="kpi-card" style="--kpi-color: var(--warning); background: rgba(210,153,34,0.05);">
-      <div class="kpi-icon">🕵️‍♂️</div>
-      <div class="kpi-value" id="radar-gap-count">0</div>
-      <div class="kpi-label">Inconsistencias Detectadas</div>
-      <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">RAPs con registros incompletos</div>
+    <div class="kpi-card" style="--kpi-color:var(--warning-solid)">
+      <div class="kpi-icon"><?= icon('siren') ?></div>
+      <div class="kpi-body">
+        <div class="kpi-value" id="radar-gap-count">0</div>
+        <div class="kpi-label">Inconsistencias detectadas</div>
+        <div class="kpi-trend">RAPs con registros incompletos</div>
+      </div>
     </div>
-    <div class="kpi-card" style="--kpi-color: var(--sena-blue); background: rgba(26,77,181,0.05);">
-      <div class="kpi-icon">📝</div>
-      <div class="kpi-value" id="radar-total-count">0</div>
-      <div class="kpi-label">Total Registros Históricos</div>
-      <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Juicios en la base de datos</div>
+    <div class="kpi-card" style="--kpi-color:var(--brand)">
+      <div class="kpi-icon"><?= icon('file-pen') ?></div>
+      <div class="kpi-body">
+        <div class="kpi-value" id="radar-total-count">0</div>
+        <div class="kpi-label">Registros históricos</div>
+        <div class="kpi-trend">Juicios en la base de datos</div>
+      </div>
     </div>
   </div>
 
-  <div class="grid-2" style="grid-template-columns: 1fr 400px; gap:24px; align-items: flex-start;">
-    <!-- Consultas Rápidas y Buscador -->
-    <div class="card">
+  <div class="grid-main-aside">
+    <!-- Explorador de juicios -->
+    <div class="card card-flush">
       <div class="card-header">
         <div>
-          <div class="card-title">🔎 Consultas Rápidas y Explorador</div>
-          <div class="card-subtitle">Usa los filtros directos para encontrar información específica sin saturarte</div>
-        </div>
-        <button class="btn btn-success btn-sm" onclick="openRegistroModal()">✏️ Registro Manual</button>
-      </div>
-      
-      <!-- Filtros de Acción Rápida -->
-      <div style="padding:20px; border-bottom:1px solid var(--border); background:rgba(0,0,0,0.02);">
-        <div style="font-size:11px; font-weight:800; color:var(--text-muted); margin-bottom:12px; text-transform:uppercase; letter-spacing:1px;">¿Qué deseas localizar ahora?</div>
-        <div id="quick-filter-pills" style="display:flex; flex-wrap:wrap; gap:10px;">
-          <button class="btn btn-outline q-pill" data-filter="No Aprobado" style="border-color:var(--danger); color:var(--danger);" onclick="setQuickFilter('No Aprobado', this)">🔴 Ver 'No Aprobados'</button>
-          <button class="btn btn-outline q-pill" data-filter="Por evaluar" style="border-color:var(--warning); color:var(--warning);" onclick="setQuickFilter('Por evaluar', this)">⏳ Por Evaluar</button>
-          <button class="btn btn-outline q-pill" data-filter="Reciente" style="border-color:var(--sena-blue); color:var(--sena-blue);" onclick="setQuickFilter('Reciente', this)">📅 Registros Recientes</button>
-          <button class="btn btn-outline q-pill" data-filter="all" style="border-color:var(--text-muted); color:var(--text-muted);" onclick="setQuickFilter('all', this)">🌐 Ver Todo</button>
+          <div class="card-title"><?= icon('search') ?> Explorador de juicios</div>
+          <div class="card-subtitle">Filtra por estado o busca un aprendiz o RAP concreto</div>
         </div>
       </div>
 
-      <!-- Buscador -->
-      <div style="padding:16px; border-bottom:1px solid var(--border);">
-        <div style="position:relative;">
-          <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-muted);">🔍</span>
-          <input type="text" id="search-juicios" class="form-control" placeholder="Escribe el nombre de un aprendiz o un RAP para empezar..." style="padding-left:36px; height:45px; font-size:15px;" oninput="filterJuicios()">
+      <div class="explorer-controls">
+        <div class="cluster-sm mb-3" id="quick-filter-pills">
+          <button class="pill pill-danger" data-filter="No Aprobado" onclick="setQuickFilter('No Aprobado', this)"><?= icon('x-circle') ?> No aprobados</button>
+          <button class="pill" data-filter="Por evaluar" onclick="setQuickFilter('Por evaluar', this)"><?= icon('clock') ?> Por evaluar</button>
+          <button class="pill" data-filter="Reciente" onclick="setQuickFilter('Reciente', this)"><?= icon('calendar') ?> Últimos 30 días</button>
+          <button class="pill" data-filter="all" onclick="setQuickFilter('all', this)"><?= icon('layers') ?> Ver todo</button>
+        </div>
+        <div class="search-field">
+          <?= icon('search') ?>
+          <input type="text" id="search-juicios" class="form-control"
+                 placeholder="Nombre del aprendiz, documento o código de RAP…"
+                 oninput="filterJuicios()" aria-label="Buscar juicio" />
         </div>
       </div>
 
-      <!-- Área de Resultados (Cards en lugar de Tabla) -->
-      <div id="juicios-results-container" style="padding:20px; display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:16px; min-height:300px; max-height:600px; overflow-y:auto; background:var(--bg-body);">
-        <div style="grid-column:1/-1; text-align:center; padding:60px;">
-          <div style="font-size:40px; margin-bottom:16px;">🔍</div>
-          <div style="font-size:16px; font-weight:600; color:var(--text-secondary);">Empieza a buscar o selecciona un filtro arriba</div>
-          <div style="font-size:12px; color:var(--text-muted); margin-top:8px;">La información aparecerá aquí de forma organizada</div>
-        </div>
-      </div>
+      <div id="juicios-results-container" class="juicios-grid"></div>
     </div>
 
-    <!-- Alertas de Gestión -->
-    <div style="display:flex; flex-direction:column; gap:24px;">
-      <div class="card" style="border-top: 3px solid var(--danger);">
-        <div class="card-header"><div class="card-title" style="font-size:14px;">🚨 Aprendices que requieren atención</div></div>
-        <div id="radar-list-riesgo" style="padding:16px; display:flex; flex-direction:column; gap:12px;">
-          <!-- Se llena vía JS -->
+    <!-- Alertas de gestión -->
+    <div class="stack-lg">
+      <div class="card" style="border-top:3px solid var(--danger-solid)">
+        <div class="card-header mb-3">
+          <div class="card-title"><?= icon('alert-triangle') ?> Requieren atención</div>
         </div>
+        <div class="stack-sm" id="radar-list-riesgo"></div>
       </div>
-      
-      <div class="card" style="border-top: 3px solid var(--warning);">
-        <div class="card-header"><div class="card-title" style="font-size:14px;">🕵️‍♂️ RAPs con "Olvidos" del Instructor</div></div>
-        <div id="radar-list-gaps" style="padding:16px; display:flex; flex-direction:column; gap:12px;">
-          <!-- Se llena vía JS -->
+
+      <div class="card" style="border-top:3px solid var(--warning-solid)">
+        <div class="card-header mb-3">
+          <div class="card-title"><?= icon('siren') ?> RAPs sin calificar del todo</div>
         </div>
+        <div class="stack-sm" id="radar-list-gaps"></div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- MODAL AVANCE POR APRENDIZ (ELIMINADO Y MOVIDO A PAGINA INDEPENDIENTE) -->
-
-
-<!-- MODAL REGISTRO MANUAL -->
-<div id="modal-registro" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center; backdrop-filter:blur(4px);">
-  <div class="card" style="width:600px; max-width:90%; animation:fadeInUp 0.3s ease;">
-    <div class="card-header" style="border-bottom:1px solid var(--border); margin-bottom:16px; padding-bottom:16px;">
-      <div class="card-title">✏️ Registrar nuevo juicio evaluativo</div>
-      <button class="btn" style="background:none; border:none; font-size:20px; cursor:pointer;" onclick="closeRegistroModal()">✕</button>
+<!-- ══ MODAL: REGISTRO MANUAL ══ -->
+<div class="modal-overlay" id="modal-registro">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="reg-title">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="reg-title"><?= icon('pencil') ?> Registrar juicio evaluativo</div>
+        <div class="modal-sub">Sólo aprendices de la ficha <?= htmlspecialchars($ficha) ?></div>
+      </div>
+      <button class="modal-close" onclick="closeRegistroModal()" aria-label="Cerrar"><?= icon('x') ?></button>
     </div>
     <form id="form-juicio" onsubmit="saveJuicio(event)">
-      <div class="form-group">
-        <label class="form-label">Aprendiz de esta ficha <span class="req">*</span></label>
-        <select id="jf-aprendiz" class="form-control" required onchange="loadResultadosParaAprendiz()">
-          <option value="">Selecciona un aprendiz...</option>
-        </select>
-      </div>
-      <div id="resultados-section" style="display:none;">
+      <div class="modal-body">
         <div class="form-group">
-          <label class="form-label">Resultado de aprendizaje <span class="req">*</span></label>
-          <select name="id_resultado" id="jf-resultado" class="form-control" required onchange="checkResultadoStatus()">
-            <option value="">Selecciona un resultado...</option>
+          <label class="form-label" for="jf-aprendiz">Aprendiz <span class="req">*</span></label>
+          <select id="jf-aprendiz" class="form-control" required onchange="loadResultadosParaAprendiz()">
+            <option value="">Selecciona un aprendiz…</option>
           </select>
-          <div id="resultado-status" style="margin-top:6px;"></div>
         </div>
-        <div class="form-row">
+        <div id="resultados-section" hidden>
           <div class="form-group">
-            <label class="form-label">Tipo de juicio <span class="req">*</span></label>
-            <select name="estado" id="jf-tipo" class="form-control" required></select>
+            <label class="form-label" for="jf-resultado">Resultado de aprendizaje <span class="req">*</span></label>
+            <select name="id_resultado" id="jf-resultado" class="form-control" required onchange="checkResultadoStatus()">
+              <option value="">Selecciona un resultado…</option>
+            </select>
+            <div id="resultado-status" style="margin-top:8px"></div>
           </div>
-          <div class="form-group">
-            <label class="form-label">Funcionario evaluador <span class="req">*</span></label>
-            <select name="documento_funcionario" id="jf-funcionario" class="form-control" required></select>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="jf-tipo">Tipo de juicio <span class="req">*</span></label>
+              <select name="estado" id="jf-tipo" class="form-control" required></select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="jf-funcionario">Funcionario evaluador <span class="req">*</span></label>
+              <select name="documento_funcionario" id="jf-funcionario" class="form-control" required></select>
+            </div>
           </div>
+          <div class="form-group mb-0">
+            <label class="form-label" for="jf-obs">Observaciones</label>
+            <textarea name="observaciones" id="jf-obs" class="form-control" rows="3" placeholder="Opcional…"></textarea>
+          </div>
+          <div id="juicio-result" style="margin-top:14px"></div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Observaciones</label>
-          <textarea name="observaciones" class="form-control" rows="3" placeholder="Opcional..."></textarea>
-        </div>
-        <div id="juicio-result"></div>
-        <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:24px;">
-          <button type="button" class="btn btn-outline" onclick="closeRegistroModal()">Cancelar</button>
-          <button type="submit" class="btn btn-primary" id="btn-save-juicio">💾 Guardar Juicio</button>
-        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeRegistroModal()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="btn-save-juicio"><?= icon('save') ?> Guardar juicio</button>
       </div>
     </form>
   </div>
 </div>
 
-<!-- MODAL IMPORTACIÓN -->
-<div id="modal-import" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center; backdrop-filter:blur(4px);">
-  <div class="card" style="width:720px; max-width:90%; animation:fadeInUp 0.3s ease;">
-    <div class="card-header" style="border-bottom:1px solid var(--border); margin-bottom:16px; padding-bottom:16px;">
-      <div><div class="card-title">⬆️ Importación Masiva de Juicios</div><div class="card-subtitle">Exclusivo para la ficha actual</div></div>
-      <button class="btn" style="background:none; border:none; font-size:20px; cursor:pointer;" onclick="closeImportModal()">✕</button>
-    </div>
-    
-    <div class="dropzone" id="dz-juicios" onclick="document.getElementById('file-juicios').click()" style="margin-bottom:16px;">
-      <input type="file" id="file-juicios" accept=".csv" style="display:none;" onchange="handleFileJuicios(this.files[0])" />
-      <div class="dropzone-icon">📂</div>
-      <div class="dropzone-title">Arrastra el CSV de juicios aquí</div>
-      <div class="dropzone-sub">El archivo debe contener la columna documento_aprendiz y codigo_resultado</div>
-    </div>
-    
-    <div id="jpreview-section" style="display:none;">
-      <div class="card-header" style="margin-bottom:12px; background:var(--bg-body); padding:12px; border-radius:8px;">
-        <div><div class="card-title" style="font-size:14px;">Vista previa</div><div class="card-subtitle" id="jpreview-count"></div></div>
-        <button class="btn btn-success btn-sm" id="btn-jimport" onclick="doJuiciosImport()">⬆️ Confirmar Importación</button>
+<!-- ══ MODAL: IMPORTACIÓN MASIVA ══ -->
+<div class="modal-overlay" id="modal-import">
+  <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="imp-title">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="imp-title"><?= icon('upload') ?> Importación masiva de juicios</div>
+        <div class="modal-sub">Exclusivo para la ficha <?= htmlspecialchars($ficha) ?></div>
       </div>
-      <div class="table-wrap" style="max-height:240px; overflow-y:auto;">
-        <table class="table">
-          <thead><tr><th>#</th><th>Doc. Aprendiz</th><th>Cód. Resultado</th><th>Juicio</th></tr></thead>
-          <tbody id="jpreview-body"></tbody>
-        </table>
-      </div>
+      <button class="modal-close" onclick="closeImportModal()" aria-label="Cerrar"><?= icon('x') ?></button>
     </div>
-    <div id="jimport-result" style="margin-top:16px;"></div>
+    <div class="modal-body">
+      <div class="dropzone" id="dz-juicios" onclick="document.getElementById('file-juicios').click()">
+        <input type="file" id="file-juicios" accept=".csv" hidden onchange="handleFileJuicios(this.files[0])" />
+        <div class="dropzone-icon"><?= icon('folder-open') ?></div>
+        <div class="dropzone-title">Arrastra el CSV de juicios aquí</div>
+        <div class="dropzone-sub">Debe contener las columnas <strong>documento_aprendiz</strong> y <strong>codigo_resultado</strong></div>
+      </div>
+
+      <div id="jpreview-section" style="margin-top:20px" hidden>
+        <div class="cluster-between mb-3">
+          <div>
+            <div class="section-title">Vista previa</div>
+            <div class="section-sub" id="jpreview-count"></div>
+          </div>
+          <button class="btn btn-success btn-sm" id="btn-jimport" onclick="doJuiciosImport()">
+            <?= icon('upload') ?> Confirmar importación
+          </button>
+        </div>
+        <div class="table-wrap" style="max-height:260px">
+          <table class="table table-compact">
+            <thead><tr><th>#</th><th>Doc. Aprendiz</th><th>Cód. Resultado</th><th>Juicio</th></tr></thead>
+            <tbody id="jpreview-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="jimport-result" style="margin-top:16px"></div>
+    </div>
   </div>
 </div>
 
+<style>
+  /* ── Cabecera de ficha: el bloque de stats se estira en vez de dejar un hueco ── */
+  .hero-ficha {
+    display: flex; flex-wrap: wrap; gap: var(--space-5);
+    align-items: center; justify-content: space-between;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--brand);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: var(--space-5);
+  }
+  .hf-main { min-width: 260px; flex: 1; }
+  .hf-ficha { font-size: 24px; font-weight: 800; color: var(--brand-text); letter-spacing: -.02em; }
+  .hf-programa { font-size: 14.5px; font-weight: 600; color: var(--text-primary); margin-top: 4px; line-height: 1.4; }
+  .hero-ficha .cluster .ic { width: 14px; height: 14px; color: var(--text-muted); }
+  .hf-stats { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+  .hf-stat {
+    background: var(--bg-subtle); border: 1px solid var(--border);
+    border-radius: var(--radius-md); padding: 10px 18px;
+    text-align: center; min-width: 108px;
+  }
+  .hf-stat-val { font-size: 22px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .hf-stat-lbl { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; margin-top: 2px; }
+
+  /* ── Explorador de juicios ── */
+  .explorer-controls { padding: 0 var(--space-5) var(--space-4); border-bottom: 1px solid var(--border); }
+  .juicios-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: var(--space-3); padding: var(--space-4);
+    max-height: 620px; overflow-y: auto;
+  }
+  .juicio-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-left: 3px solid var(--j-color, var(--text-muted));
+    border-radius: var(--radius-md); padding: 13px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .juicio-rap {
+    background: var(--bg-subtle); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 8px 10px;
+  }
+  .juicio-rap-cod { font-size: 10px; font-weight: 800; color: var(--brand-text); text-transform: uppercase; letter-spacing: .05em; font-family: ui-monospace, Consolas, monospace; }
+  .juicio-rap-txt {
+    font-size: 12px; line-height: 1.45; color: var(--text-secondary); margin-top: 2px;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .juicio-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; color: var(--text-muted); }
+  .juicio-foot .ic { width: 12px; height: 12px; }
+
+  /* ── Alertas laterales ── */
+  .alert-item {
+    border-radius: var(--radius-md); padding: 10px 12px;
+    border: 1px solid; font-size: 12px;
+  }
+  .alert-item.is-danger  { background: var(--danger-soft);  border-color: var(--danger-bd); }
+  .alert-item.is-warning { background: var(--warning-soft); border-color: var(--warning-bd); cursor: pointer; }
+  .alert-item.is-warning:hover { border-color: var(--warning-solid); }
+  .rap-chip {
+    display: inline-block; background: var(--bg-card); border: 1px solid var(--border);
+    padding: 2px 7px; border-radius: var(--radius-sm); font-size: 10px; font-weight: 700; margin: 2px 2px 0 0;
+  }
+
+  /* ── Tabla de competencias ── */
+  .comp-head-row td { background: var(--brand-soft); border-bottom: 2px solid var(--brand-soft-bd) !important; }
+  .comp-head-code { font-size: 10.5px; font-weight: 800; color: var(--brand-text); text-transform: uppercase; letter-spacing: .06em; }
+  .comp-head-name { font-size: 14.5px; font-weight: 800; color: var(--text-primary); margin-top: 2px; }
+  .rap-row td { vertical-align: top; }
+  .rap-row td:first-child { padding-left: 30px; }
+  .faltantes-box {
+    margin-top: 9px; background: var(--danger-soft); border: 1px solid var(--danger-bd);
+    border-radius: var(--radius-md); padding: 9px 11px; cursor: pointer;
+  }
+  .faltantes-box:hover { border-color: var(--danger-solid); }
+  .faltantes-title { font-size: 10px; font-weight: 800; color: var(--danger); letter-spacing: .05em; text-transform: uppercase; margin-bottom: 6px; display: flex; align-items: center; gap: 5px; }
+  .faltantes-title .ic { width: 12px; height: 12px; }
+  .avance-cell { display: flex; align-items: center; gap: 8px; }
+  .avance-cell .progress-bar-wrap { flex: 1; }
+  .avance-pct { font-size: 12px; font-weight: 800; min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+
 <script>
-const FICHA = new URLSearchParams(window.location.search).get('ficha');
-const API = '../api/ficha_detalle.php?ficha=' + encodeURIComponent(FICHA);
+const FICHA = <?= json_encode($ficha) ?>;
+const API   = '../api/ficha_detalle.php?ficha=' + encodeURIComponent(FICHA);
 
-// Mover modales al body para asegurar que cubran toda la pantalla (ejecutado sincronamente)
-const mAv = document.getElementById('modal-avance');
-if (mAv) document.body.appendChild(mAv);
-
-const mReg = document.getElementById('modal-registro');
-if (mReg) document.body.appendChild(mReg);
-
-const mImp = document.getElementById('modal-import');
-if (mImp) document.body.appendChild(mImp);
+let allJuiciosData = [], allAprendicesData = [], allCompetenciasData = [], selectedStates = [];
+let currentQuickFilter = null, csvJuicios = [];
 
 function switchTab(id, btn) {
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
   document.getElementById(id).classList.add('active');
   btn.classList.add('active');
+  btn.setAttribute('aria-selected', 'true');
 }
 
-let allJuiciosData = [];
-let allAprendicesData = [];
-let allCompetenciasData = [];
-let selectedStates = [];
-
 async function init() {
-  await Promise.all([
-    loadMeta(),
-    loadAprendices(),
-    loadCompetencias(),
-    loadJuicios()
-  ]);
+  await Promise.all([loadMeta(), loadAprendices(), loadCompetencias(), loadJuicios()]);
 
-  // Auto-abrir modal de avance si viene de la URL
-  const urlParams = new URLSearchParams(window.location.search);
-  const autoOpenDoc = urlParams.get('openAvance');
-  if (autoOpenDoc) {
-    const a = allAprendicesData.find(ap => ap.documento === autoOpenDoc);
-    if (a) openAvanceModal(a.documento, a.nombre + ' ' + a.apellidos);
+  // Si venimos con ?openAvance=<doc>, saltar directo al seguimiento del aprendiz
+  const doc = new URLSearchParams(location.search).get('openAvance');
+  if (doc && allAprendicesData.some(a => a.documento === doc)) {
+    location.href = `aprendiz_seguimiento.php?ficha=${encodeURIComponent(FICHA)}&documento=${encodeURIComponent(doc)}`;
   }
 }
 
+/* ================================================================
+   META DE LA FICHA
+   ================================================================ */
 async function loadMeta() {
-  const meta = await fetch(API + '&action=meta').then(r => r.json());
-  if (meta.error) { alert(meta.error); window.location.href = 'fichas.php'; return; }
-  
-  document.getElementById('hf-ficha').textContent = meta.ficha;
-  document.getElementById('hf-programa').textContent = meta.codigo_programa + ' — ' + meta.programa;
-  document.getElementById('hf-fechas').textContent = meta.fecha_inicio + ' a ' + meta.fecha_fin;
-  document.getElementById('hf-modalidad').textContent = meta.modalidad;
-  
-  const b = document.getElementById('hf-estado');
-  b.textContent = meta.estado;
-  b.className = 'badge ' + (meta.estado === 'En Ejecución' ? 'badge-success' : 'badge-info');
+  try {
+    const meta = await fetch(API + '&action=meta').then(r => r.json());
+    if (meta.error) { showToast(esc(meta.error), 'danger'); setTimeout(() => location.href = 'fichas.php', 1500); return; }
 
-  document.getElementById('stat-aprendices').textContent = meta.total_aprendices;
-  document.getElementById('stat-competencias').textContent = meta.total_competencias;
-  document.getElementById('stat-resultados').textContent = meta.total_resultados ?? 0;
-  
-  document.getElementById('hero-meta').style.display = 'flex';
+    document.getElementById('hf-ficha').textContent     = meta.ficha;
+    document.getElementById('hf-programa').textContent  = meta.codigo_programa + ' — ' + meta.programa;
+    document.getElementById('hf-fechas').textContent    = meta.fecha_inicio + ' a ' + meta.fecha_fin;
+    document.getElementById('hf-modalidad').textContent = meta.modalidad;
+
+    const b = document.getElementById('hf-estado');
+    b.textContent = meta.estado;
+    b.className = 'badge ' + badgeFicha(meta.estado);
+
+    document.getElementById('stat-aprendices').textContent   = meta.total_aprendices;
+    document.getElementById('stat-competencias').textContent = meta.total_competencias;
+    document.getElementById('stat-resultados').textContent   = meta.total_resultados ?? 0;
+
+    document.getElementById('hero-meta').hidden = false;
+  } catch (e) { showToast('No se pudo cargar la información de la ficha.', 'danger'); }
 }
 
+/* ================================================================
+   APRENDICES
+   ================================================================ */
 
 
 async function loadAprendices() {
-  allAprendicesData = await fetch(API + '&action=aprendices').then(r => r.json());
-  
-  const estadosSet = new Set();
+  try {
+    allAprendicesData = await fetch(API + '&action=aprendices').then(r => r.json());
+  } catch (e) { allAprendicesData = []; }
+
+  const estados = new Set();
   allAprendicesData.forEach(a => {
     const raw = (a.estado || 'Desconocido').trim().toLowerCase();
     a.estado_normalized = raw.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-    estadosSet.add(a.estado_normalized);
+    estados.add(a.estado_normalized);
   });
 
-  const container = document.getElementById('filter-pills-aprendices');
-  container.innerHTML = '';
-  
-  // Opción "Todos" simplificada o simplemente desactivar filtros
-  Array.from(estadosSet).sort().forEach(e => {
-    const pill = document.createElement('div');
-    pill.className = 'status-pill';
-    pill.innerHTML = `<span>${e}</span>`;
-    pill.onclick = () => toggleStatusFilter(e, pill);
-    container.appendChild(pill);
-  });
+  document.getElementById('filter-pills-aprendices').innerHTML =
+    Array.from(estados).sort().map(e =>
+      `<button type="button" class="pill" data-state="${esc(e)}" onclick="toggleStatusFilter('${esc(e)}', this)">${esc(e)}</button>`
+    ).join('');
 
   renderAprendices(allAprendicesData);
 }
 
 function toggleStatusFilter(state, el) {
   const idx = selectedStates.indexOf(state);
-  if (idx > -1) {
-    selectedStates.splice(idx, 1);
-    el.classList.remove('active');
-  } else {
-    selectedStates.push(state);
-    el.classList.add('active');
-  }
+  if (idx > -1) selectedStates.splice(idx, 1); else selectedStates.push(state);
+  el.classList.toggle('active');
   filterAprendices();
 }
 
 function renderAprendices(data) {
   const tb = document.getElementById('tbody-aprendices');
-  if (!data.length) { tb.innerHTML = '<tr><td colspan="5" style="text-align:center;">Sin resultados</td></tr>'; return; }
-  
-  const eb = {'Activo':'badge-success','Retiro Voluntario':'badge-warning','Deserción':'badge-danger'};
+  document.getElementById('aprendices-count').textContent =
+    `${data.length} de ${allAprendicesData.length} aprendices`;
+
+  if (!data.length) {
+    tb.innerHTML = `<tr><td colspan="5"><div class="empty-state">
+      <div class="empty-icon">${ic('users')}</div>
+      <div class="empty-title">Sin aprendices</div>
+      <p>Ningún aprendiz coincide con los filtros aplicados.</p>
+    </div></td></tr>`;
+    return;
+  }
+
   tb.innerHTML = data.map(a => {
     const aprob = parseInt(a.raps_aprobados || 0);
     const total = parseInt(a.total_raps || 0);
-    const pct = total > 0 ? Math.round((aprob / total) * 100) : 0;
+    const pct   = total > 0 ? Math.round(aprob / total * 100) : 0;
     const color = pct >= 80 ? 'green' : pct >= 50 ? 'warn' : 'danger';
-    
-    return `
-      <tr>
-        <td><strong>${esc(a.nombre)} ${esc(a.apellidos)}</strong></td>
-        <td style="font-family:monospace; font-size:12px;">${esc(a.documento)}</td>
-        <td><span class="badge ${eb[a.estado_normalized]||'badge-muted'}">${esc(a.estado_normalized)}</span></td>
-        <td>
-          <div style="display:flex; align-items:center; gap:10px;">
-            <div class="progress-bar-wrap" style="flex:1; height:6px;">
-              <div class="progress-bar ${color}" style="width:${pct}%"></div>
-            </div>
-            <span style="font-size:11px; font-weight:700; min-width:35px;">${pct}%</span>
-          </div>
-          <div style="font-size:9px; color:var(--text-muted); margin-top:2px;">${aprob} de ${total} RAPs</div>
-        </td>
-        <td><a href="aprendiz_seguimiento.php?ficha=${encodeURIComponent(FICHA)}&documento=${encodeURIComponent(a.documento)}" class="btn btn-outline btn-sm">📈 Avance</a></td>
-      </tr>
-    `;
+    return `<tr>
+      <td class="fw-600">${esc(a.nombre)} ${esc(a.apellidos)}</td>
+      <td class="mono text-sm text-secondary">${esc(a.documento)}</td>
+      <td><span class="badge ${badgeEstado(a.estado)}">${esc(a.estado_normalized)}</span></td>
+      <td>
+        <div class="avance-cell">
+          <div class="progress-bar-wrap"><div class="progress-bar ${color}" style="width:${pct}%"></div></div>
+          <span class="avance-pct">${pct}%</span>
+        </div>
+        <div class="text-xs text-muted" style="margin-top:3px">${aprob} de ${total} RAPs</div>
+      </td>
+      <td class="col-actions">
+        <a href="aprendiz_seguimiento.php?ficha=${encodeURIComponent(FICHA)}&documento=${encodeURIComponent(a.documento)}"
+           class="btn btn-outline btn-sm">${ic('trending-up')} Avance</a>
+      </td>
+    </tr>`;
   }).join('');
 }
 
 function filterAprendices() {
   const q = document.getElementById('search-aprendices').value.toLowerCase().trim();
-  
-  const filtered = allAprendicesData.filter(a => {
-    const matchSearch = (a.nombre + ' ' + a.apellidos).toLowerCase().includes(q) || a.documento.toLowerCase().includes(q);
-    const matchEstado = selectedStates.length === 0 || selectedStates.includes(a.estado_normalized);
-    return matchSearch && matchEstado;
-  });
-  renderAprendices(filtered);
+  renderAprendices(allAprendicesData.filter(a =>
+    (`${a.nombre} ${a.apellidos}`.toLowerCase().includes(q) || a.documento.toLowerCase().includes(q)) &&
+    (selectedStates.length === 0 || selectedStates.includes(a.estado_normalized))
+  ));
 }
 
+/* ================================================================
+   COMPETENCIAS Y RESULTADOS
+   ================================================================ */
 async function loadCompetencias() {
-  allCompetenciasData = await fetch(API + '&action=competencias').then(r => r.json());
-  renderCompetencias(allCompetenciasData);
+  try {
+    allCompetenciasData = await fetch(API + '&action=competencias').then(r => r.json());
+    renderCompetencias(allCompetenciasData);
+  } catch (e) { showToast('No se pudieron cargar las competencias.', 'danger'); }
 }
 
 function renderCompetencias(data) {
   const container = document.getElementById('tbody-competencias');
-  if (!data.length) { container.innerHTML = '<tr><td colspan="3" style="text-align:center;">Sin resultados</td></tr>'; return; }
 
-  // 1. Agrupar por competencia
+  if (!data.length) {
+    document.getElementById('competencias-count').textContent = '';
+    container.innerHTML = `<tr><td colspan="3"><div class="empty-state">
+      <div class="empty-icon">${ic('book')}</div>
+      <div class="empty-title">Sin resultados</div>
+      <p>Ninguna competencia o RAP coincide con la búsqueda.</p>
+    </div></td></tr>`;
+    return;
+  }
+
   const grouped = data.reduce((acc, r) => {
-    if (!acc[r.competencia]) acc[r.competencia] = { 
-      name: r.competencia, 
-      code: r.cod_comp, 
-      hrs: r.duracion_horas, 
-      raps: [] 
-    };
-    acc[r.competencia].raps.push(r);
+    (acc[r.competencia] ??= { name: r.competencia, code: r.cod_comp, hrs: r.duracion_horas, raps: [] }).raps.push(r);
     return acc;
   }, {});
 
-  // 2. Renderizar con porcentajes por bloque
-  container.innerHTML = Object.values(grouped).map(c => {
-    // Calcular promedio de la competencia
-    const totalRaps = c.raps.length;
-    const avgPct = Math.round(c.raps.reduce((sum, r) => {
-        const total = parseInt(r.total_activos || 0);
-        return sum + (total > 0 ? (parseInt(r.aprobados_count || 0) / total) : 0);
-    }, 0) / totalRaps * 100);
-    
-    const compHeader = `
-      <tr style="background:rgba(26,77,181,0.04);">
-        <td colspan="2" style="padding:16px; border-bottom:2px solid var(--sena-blue);">
-          <div style="font-size:11px; font-weight:800; color:var(--sena-blue-lt); margin-bottom:2px;">COMPETENCIA: ${esc(c.code)}</div>
-          <div style="font-size:15px; font-weight:800; color:var(--sena-blue);">${esc(c.name)}</div>
-          <div style="font-size:11px; color:var(--text-secondary); margin-top:4px;">⏱️ Duración: ${c.hrs} horas | 📚 ${totalRaps} Resultados</div>
-        </td>
-        <td style="padding:16px; border-bottom:2px solid var(--sena-blue); text-align:right; vertical-align:middle;">
-          <div style="font-size:20px; font-weight:900; color:var(--sena-blue);">${avgPct}%</div>
-          <div style="font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Avance Grupal</div>
-        </td>
-      </tr>
-    `;
+  const grupos = Object.values(grouped);
+  document.getElementById('competencias-count').textContent =
+    `${grupos.length} competencia${grupos.length === 1 ? '' : 's'} · ${data.length} RAPs`;
 
-    const rapsRows = c.raps.map(r => {
+  container.innerHTML = grupos.map(c => {
+    const avgPct = Math.round(c.raps.reduce((sum, r) => {
+      const total = parseInt(r.total_activos || 0);
+      return sum + (total > 0 ? parseInt(r.aprobados_count || 0) / total : 0);
+    }, 0) / c.raps.length * 100);
+
+    const head = `<tr class="comp-head-row">
+      <td colspan="2">
+        <div class="comp-head-code">Competencia ${esc(c.code)}</div>
+        <div class="comp-head-name">${esc(c.name)}</div>
+        <div class="cluster-sm text-xs text-secondary" style="margin-top:5px">
+          <span>${ic('timer')} ${c.hrs} horas</span>
+          <span>${ic('book')} ${c.raps.length} resultados</span>
+        </div>
+      </td>
+      <td class="text-right">
+        <div class="fw-800 text-brand" style="font-size:19px">${avgPct}%</div>
+        <div class="text-xs text-muted fw-700" style="text-transform:uppercase">Avance grupal</div>
+      </td>
+    </tr>`;
+
+    const rows = c.raps.map(r => {
       const aprob = parseInt(r.aprobados_count || 0);
       const total = parseInt(r.total_activos || 0);
-      const pct = total > 0 ? Math.round((aprob / total) * 100) : 0;
+      const pct   = total > 0 ? Math.round(aprob / total * 100) : 0;
       const color = pct >= 80 ? 'green' : pct >= 50 ? 'warn' : 'danger';
 
-      return `
-        <tr>
-          <td style="padding-left:32px; vertical-align:top; border-bottom:1px solid var(--border);">
-            <div style="font-weight:600; font-size:13px; color:var(--text-primary);">${esc(r.resultado)}</div>
-            ${r.faltantes && r.faltantes.length > 0 ? `
-              <div onclick="quickSearchApprentice('', '${esc(r.cod_res)}')" style="margin-top:10px; background:rgba(218,54,51,0.05); border:1px solid rgba(218,54,51,0.2); border-radius:8px; padding:10px; cursor:pointer;">
-                <div style="font-size:10px; font-weight:900; color:var(--danger); margin-bottom:6px; letter-spacing:0.5px;">🚨 ATENCIÓN: FALTAN POR CALIFICAR</div>
-                <div style="display:flex; flex-wrap:wrap; gap:6px;">
-                  ${r.faltantes.map(f => `<span style="background:var(--bg-card); border:1px solid var(--border); padding:3px 8px; border-radius:6px; font-size:10px; color:var(--text-primary); font-weight:700;">${esc(f)}</span>`).join('')}
-                </div>
-              </div>
-            ` : ''}
-          </td>
-          <td style="font-size:11px; color:var(--text-muted); font-family:monospace; vertical-align:top; padding-top:14px; border-bottom:1px solid var(--border);">${esc(r.cod_res)}</td>
-          <td style="vertical-align:top; padding-top:14px; border-bottom:1px solid var(--border);">
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-              <div class="progress-bar-wrap" style="flex:1; height:6px; background:rgba(0,0,0,0.05);">
-                <div class="progress-bar ${color}" style="width:${pct}%"></div>
-              </div>
-              <span style="font-size:12px; font-weight:800; min-width:35px; text-align:right;">${pct}%</span>
-            </div>
-            <div style="font-size:10px; color:var(--text-muted); text-align:right;">${aprob} de ${total} aprobados</div>
-          </td>
-        </tr>
-      `;
+      const faltantes = (r.faltantes && r.faltantes.length)
+        ? `<div class="faltantes-box" onclick="quickSearchApprentice('', '${esc(r.cod_res)}')"
+                role="button" tabindex="0" title="Ver estos aprendices en el explorador de juicios">
+             <div class="faltantes-title">${ic('siren')} Faltan por calificar</div>
+             <div>${r.faltantes.map(f => `<span class="rap-chip">${esc(f)}</span>`).join('')}</div>
+           </div>`
+        : '';
+
+      return `<tr class="rap-row">
+        <td><div class="fw-600 text-sm">${esc(r.resultado)}</div>${faltantes}</td>
+        <td class="mono text-xs text-muted">${esc(r.cod_res)}</td>
+        <td>
+          <div class="avance-cell">
+            <div class="progress-bar-wrap"><div class="progress-bar ${color}" style="width:${pct}%"></div></div>
+            <span class="avance-pct">${pct}%</span>
+          </div>
+          <div class="text-xs text-muted text-right" style="margin-top:3px">${aprob} de ${total} aprobados</div>
+        </td>
+      </tr>`;
     }).join('');
 
-    return compHeader + rapsRows;
+    return head + rows;
   }).join('');
 }
 
 function filterCompetencias() {
   const q = document.getElementById('search-competencias').value.toLowerCase().trim();
-  const filtered = allCompetenciasData.filter(r => 
-    r.competencia.toLowerCase().includes(q) || 
-    (r.cod_res && r.cod_res.toLowerCase().includes(q)) || 
-    (r.resultado && r.resultado.toLowerCase().includes(q))
-  );
-  renderCompetencias(filtered);
+  if (!q) return renderCompetencias(allCompetenciasData);
+  renderCompetencias(allCompetenciasData.filter(r =>
+    (r.competencia || '').toLowerCase().includes(q) ||
+    (r.cod_res || '').toLowerCase().includes(q) ||
+    (r.resultado || '').toLowerCase().includes(q)
+  ));
 }
 
+/* ================================================================
+   JUICIOS + RADAR DE ALERTAS
+   ================================================================ */
 async function loadJuicios() {
-  // 1. Cargar historial completo para el buscador
-  allJuiciosData = await fetch(API + '&action=juicios').then(r => r.json());
-  renderJuicios(allJuiciosData);
-  
-  // 2. Cargar auditoría para el radar
-  const auditData = await fetch(API + '&action=audit').then(r => r.json());
-  renderRadar(auditData);
+  try {
+    allJuiciosData = await fetch(API + '&action=juicios').then(r => r.json());
+    renderJuicios([]);
+    renderRadar(await fetch(API + '&action=audit').then(r => r.json()));
+  } catch (e) { showToast('No se pudieron cargar los juicios.', 'danger'); }
 }
 
 function renderRadar(auditData) {
-  // KPIs
   document.getElementById('radar-total-count').textContent = allJuiciosData.length;
-  
-  // Inconsistencias (Gaps)
-  const gaps = auditData.filter(r => r.total_aprobados > 0 && r.total_aprobados < r.total_grupo);
-  document.getElementById('radar-gap-count').textContent = gaps.length;
-  
-  const gapList = document.getElementById('radar-list-gaps');
-  if (gaps.length === 0) {
-    gapList.innerHTML = '<div style="font-size:12px; color:var(--text-muted); text-align:center;">✅ No se detectan inconsistencias grupales</div>';
-  } else {
-    gapList.innerHTML = gaps.slice(0, 5).map(g => `
-      <div onclick="quickSearchApprentice('', '${esc(g.codigo)}')" style="background:rgba(210,153,34,0.05); border:1px solid rgba(210,153,34,0.2); border-radius:8px; padding:12px; cursor:pointer; transition:transform 0.1s;">
-        <div style="font-size:11px; font-weight:700; color:var(--text-primary); margin-bottom:4px;">${esc(g.codigo)}</div>
-        <div style="font-size:10px; color:var(--warning); font-weight:800;">Faltan: ${g.total_grupo - g.total_aprobados} aprendices</div>
-        <div style="font-size:9px; color:var(--text-secondary); margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">
-          ${g.faltantes.slice(0,5).map(f => `<span style="color:var(--text-primary); font-weight:700;">${esc(f)}</span>`).join(', ')}
-        </div>
-      </div>
-    `).join('');
-  }
 
-  // Aprendices en Riesgo (Calculado desde allAprendicesData si ya cargó)
-  if (allAprendicesData && allAprendicesData.length > 0) {
-    const enRiesgo = allAprendicesData.filter(a => {
-      const pct = a.total_raps > 0 ? (a.raps_aprobados / a.total_raps) * 100 : 0;
-      return pct < 30 && a.estado_normalized === 'Activo';
-    });
-    
-    document.getElementById('radar-riesgo-count').textContent = enRiesgo.length;
-    const riesgoList = document.getElementById('radar-list-riesgo');
-    
-    if (enRiesgo.length === 0) {
-      riesgoList.innerHTML = '<div style="font-size:12px; color:var(--text-muted); text-align:center;">✅ No hay aprendices en riesgo crítico</div>';
-    } else {
-      riesgoList.innerHTML = enRiesgo.slice(0, 5).map(a => {
-        const pct = Math.round((a.raps_aprobados / a.total_raps) * 100);
-        return `
-          <div style="background:rgba(218,54,51,0.05); border:1px solid rgba(218,54,51,0.2); border-radius:8px; padding:10px; display:flex; justify-content:space-between; align-items:center;">
-            <div>
-              <div style="font-size:12px; font-weight:700; color:var(--text-primary);">${esc(a.nombre + ' ' + a.apellidos)}</div>
-              <div style="font-size:10px; color:var(--danger); font-weight:600;">Progreso: ${pct}%</div>
-            </div>
-            <a href="aprendiz_seguimiento.php?ficha=${encodeURIComponent(FICHA)}&documento=${encodeURIComponent(a.documento)}" class="btn btn-outline btn-sm" style="padding:4px 8px; font-size:10px;">Ver →</a>
+  // ── Inconsistencias: RAPs aprobados por unos sí y otros no ──
+  const gaps = (auditData || []).filter(r => r.total_aprobados > 0 && r.total_aprobados < r.total_grupo);
+  document.getElementById('radar-gap-count').textContent = gaps.length;
+
+  const gapList = document.getElementById('radar-list-gaps');
+  gapList.innerHTML = gaps.length === 0
+    ? `<p class="text-sm text-muted text-center">${ic('check-circle')} No se detectan inconsistencias grupales</p>`
+    : gaps.slice(0, 5).map(g => `
+        <div class="alert-item is-warning" onclick="quickSearchApprentice('', '${esc(g.codigo)}')"
+             role="button" tabindex="0">
+          <div class="fw-700 mono" style="font-size:11px">${esc(g.codigo)}</div>
+          <div class="text-warning fw-800 text-xs" style="margin-top:2px">Faltan ${g.total_grupo - g.total_aprobados} aprendices</div>
+          <div style="margin-top:6px">${g.faltantes.slice(0, 5).map(f => `<span class="rap-chip">${esc(f)}</span>`).join('')}</div>
+        </div>`).join('');
+
+  // ── Aprendices en riesgo ──
+  const enRiesgo = allAprendicesData.filter(a => {
+    const pct = a.total_raps > 0 ? a.raps_aprobados / a.total_raps * 100 : 0;
+    return pct < 30 && esActivo(a.estado);
+  });
+  document.getElementById('radar-riesgo-count').textContent = enRiesgo.length;
+
+  const riesgoList = document.getElementById('radar-list-riesgo');
+  riesgoList.innerHTML = enRiesgo.length === 0
+    ? `<p class="text-sm text-muted text-center">${ic('check-circle')} No hay aprendices en riesgo crítico</p>`
+    : enRiesgo.slice(0, 5).map(a => {
+        const pct = Math.round(a.raps_aprobados / a.total_raps * 100);
+        return `<div class="alert-item is-danger cluster-between">
+          <div class="flex-1">
+            <div class="fw-700" style="font-size:12px">${esc(a.nombre + ' ' + a.apellidos)}</div>
+            <div class="text-danger fw-600 text-xs">Progreso: ${pct}%</div>
           </div>
-        `;
+          <a href="aprendiz_seguimiento.php?ficha=${encodeURIComponent(FICHA)}&documento=${encodeURIComponent(a.documento)}"
+             class="btn btn-outline btn-sm">Ver</a>
+        </div>`;
       }).join('');
-    }
-  }
 }
 
-let currentQuickFilter = null;
-
 function setQuickFilter(f, el) {
-  // Manejo visual de botones
-  document.querySelectorAll('.q-pill').forEach(btn => {
-    btn.style.background = '';
-    btn.style.fontWeight = 'normal';
-    btn.style.borderColor = 'var(--border)';
-  });
-  if (el) {
-    el.style.background = 'rgba(26,77,181,0.1)';
-    el.style.fontWeight = '700';
-    el.style.borderColor = 'var(--sena-blue)';
-  }
-
-  if (f === 'all') {
-    currentQuickFilter = 'all';
-    document.getElementById('search-juicios').value = ''; // Limpiar búsqueda al ver todo
-  } else {
-    currentQuickFilter = f;
-  }
+  document.querySelectorAll('#quick-filter-pills .pill').forEach(b => b.classList.remove('active'));
+  if (el) el.classList.add('active');
+  currentQuickFilter = f;
+  if (f === 'all') document.getElementById('search-juicios').value = '';
   filterJuicios();
 }
 
 function quickSearchApprentice(name, rapCode = '') {
-  // Cambiar a la pestaña de Juicios usando el botón correspondiente
-  const btn = document.getElementById('tab-btn-juicios');
-  if (btn) switchTab('tab-juicios', btn);
-  
-  // Limpiar filtros y poner el nombre + RAP en el buscador
-  setQuickFilter('all', document.querySelector('.q-pill[data-filter="all"]'));
-  const searchInput = document.getElementById('search-juicios');
-  if (searchInput) {
-    searchInput.value = (name + ' ' + rapCode).trim();
-    // Ejecutar búsqueda
-    filterJuicios();
-    // Scroll suave al buscador
-    searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
+  switchTab('tab-juicios', document.getElementById('tab-btn-juicios'));
+  setQuickFilter('all', document.querySelector('#quick-filter-pills .pill[data-filter="all"]'));
+  const input = document.getElementById('search-juicios');
+  input.value = `${name} ${rapCode}`.trim();
+  filterJuicios();
+  input.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 function filterJuicios() {
   const q = (document.getElementById('search-juicios').value || '').toLowerCase().trim();
-  const container = document.getElementById('juicios-results-container');
-  
-  if (!allJuiciosData) return;
 
-  // Si no hay búsqueda ni filtro, mostrar estado inicial (opcional: o mostrar todo)
-  if (!q && !currentQuickFilter) {
-    container.innerHTML = `
-      <div style="grid-column:1/-1; text-align:center; padding:60px;">
-        <div style="font-size:40px; margin-bottom:16px;">🔍</div>
-        <div style="font-size:16px; font-weight:600; color:var(--text-secondary);">Empieza a buscar o selecciona un filtro arriba</div>
-        <div style="font-size:12px; color:var(--text-muted); margin-top:8px;">La información aparecerá aquí de forma organizada</div>
-      </div>
-    `;
-    return;
-  }
+  if (!q && !currentQuickFilter) { renderJuicios([]); return; }
 
-  const filtered = allJuiciosData.filter(j => {
-    const nom = (j.aprendiz || '').toLowerCase();
-    const doc = (j.documento_aprendiz || '').toLowerCase();
-    const cod = (j.cod_resultado || '').toLowerCase();
-    const res = (j.resultado || '').toLowerCase();
+  renderJuicios(allJuiciosData.filter(j => {
     const est = (j.estado || '').toLowerCase();
+    const matchSearch = !q || `${j.aprendiz} ${j.documento_aprendiz} ${j.cod_resultado} ${j.resultado}`.toLowerCase().includes(q);
 
-    const matchSearch = nom.includes(q) || doc.includes(q) || cod.includes(q) || res.includes(q);
-    
     let matchFilter = true;
     if (currentQuickFilter === 'No Aprobado') {
       matchFilter = est.includes('no aprobado');
     } else if (currentQuickFilter === 'Por evaluar') {
-      // Un juicio es por evaluar si dice "Por evaluar", "Pendiente", si está vacío o nulo
       matchFilter = est.includes('por evaluar') || est.includes('pendiente') || est === '' || est === 'null' || !j.estado;
     } else if (currentQuickFilter === 'Reciente') {
       if (!j.fecha_registro) return false;
-      const date = new Date(j.fecha_registro);
-      const limit = new Date(); limit.setDate(limit.getDate() - 30); // Extendemos a 30 días
-      matchFilter = date >= limit;
+      const limite = new Date(); limite.setDate(limite.getDate() - 30);
+      matchFilter = new Date(j.fecha_registro) >= limite;
     }
-    
     return matchSearch && matchFilter;
-  });
-
-  console.log(`Filtrando: q="${q}", filter="${currentQuickFilter}", resultados=${filtered.length}`);
-  renderJuicios(filtered);
+  }));
 }
+
+const JUICIO_CFG = {
+  'aprobado':    { color: 'var(--success-solid)', badge: 'badge-success', icon: 'check-circle',   label: 'Aprobado' },
+  'no aprobado': { color: 'var(--danger-solid)',  badge: 'badge-danger',  icon: 'x-circle',       label: 'No Aprobado' },
+  'por evaluar': { color: 'var(--warning-solid)', badge: 'badge-warning', icon: 'clock',          label: 'Por evaluar' },
+  'pendiente':   { color: 'var(--warning-solid)', badge: 'badge-warning', icon: 'clock',          label: 'Por evaluar' }
+};
 
 function renderJuicios(data) {
   const container = document.getElementById('juicios-results-container');
   const q = (document.getElementById('search-juicios').value || '').trim();
 
-  if (!data.length) { 
-    container.innerHTML = `
-      <div style="grid-column:1/-1; text-align:center; padding:60px;">
-        <div style="font-size:40px; margin-bottom:16px;">🔍</div>
-        <div style="font-size:16px; font-weight:600; color:var(--text-secondary);">No hay registros históricos para esta búsqueda</div>
-        ${q ? `<div style="margin-top:12px; background:rgba(218,54,51,0.05); padding:10px; border-radius:8px; border:1px dashed var(--danger); color:var(--danger); font-size:12px;">
-            Confirmado: No existe registro para los criterios: "<strong>${esc(q)}</strong>"
-        </div>` : ''}
-      </div>
-    `;
-    return; 
+  // Estado inicial: aún no se ha buscado ni filtrado
+  if (!q && !currentQuickFilter) {
+    container.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+      <div class="empty-icon">${ic('search')}</div>
+      <div class="empty-title">Empieza a buscar o elige un filtro</div>
+      <p>Los ${allJuiciosData.length} registros históricos de esta ficha aparecerán aquí de forma organizada.</p>
+    </div>`;
+    return;
   }
-  
-  // Normalizamos el mapeo para evitar errores de mayúsculas
-  const config = {
-    'aprobado': { badge: '#28a745', icon: '✅', label: 'Aprobado' },
-    'no aprobado': { badge: '#dc3545', icon: '❌', label: 'No Aprobado' },
-    'por evaluar': { badge: '#ffc107', icon: '⏳', label: 'Por evaluar' },
-    'pendiente': { badge: '#ffc107', icon: '⏳', label: 'Por evaluar' }
-  };
-  
-  container.innerHTML = data.slice(0, 500).map(j => {
-    const rawEstado = (j.estado || 'Por evaluar').trim().toLowerCase();
-    const c = config[rawEstado] || config['por evaluar'];
-    const textColor = (c.badge === '#ffc107') ? '#000' : '#fff';
-    
-    return `
-      <div class="card" style="padding:16px; border:1px solid var(--border); background:var(--bg-card); border-left: 5px solid ${c.badge}; transition:transform 0.2s; cursor:default;">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
-          <div>
-            <div style="font-size:13px; font-weight:700; color:var(--text-primary);">${esc(j.aprendiz)}</div>
-            <div style="font-size:11px; color:var(--text-muted); font-family:monospace;">ID: ${esc(j.documento_aprendiz)}</div>
-          </div>
-          <span style="background:${c.badge}; color:${textColor}; padding:5px 12px; border-radius:14px; font-size:10px; font-weight:900; white-space:nowrap; display:flex; align-items:center; gap:6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            ${c.icon} ${esc(c.label)}
-          </span>
-        </div>
-        
-        <div style="background:rgba(0,0,0,0.02); border-radius:6px; padding:10px; margin-bottom:12px; border:1px solid rgba(0,0,0,0.03);">
-          <div style="font-size:10px; font-weight:800; color:var(--sena-blue-lt); text-transform:uppercase; letter-spacing:0.5px;">${esc(j.cod_resultado)}</div>
-          <div style="font-size:12px; line-height:1.4; color:var(--text-secondary);">${esc(j.resultado.substring(0,120))}...</div>
-        </div>
 
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <div style="font-size:11px; color:var(--text-muted);">
-            📅 ${j.fecha_registro ? j.fecha_registro.substring(0,16) : 'Sin fecha'}
-          </div>
-          <div style="font-size:10px; color:var(--text-muted); font-style:italic;">
-            Por: ${esc(j.funcionario || 'SENA')}
-          </div>
+  if (!data.length) {
+    container.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+      <div class="empty-icon">${ic('inbox')}</div>
+      <div class="empty-title">Sin registros para esta búsqueda</div>
+      <p>${q ? `No existe ningún juicio que coincida con «${esc(q)}».` : 'No hay juicios que cumplan el filtro seleccionado.'}</p>
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = data.slice(0, 500).map(j => {
+    const c = JUICIO_CFG[(j.estado || 'Por evaluar').trim().toLowerCase()] || JUICIO_CFG['por evaluar'];
+    return `<div class="juicio-card" style="--j-color:${c.color}">
+      <div class="cluster-between" style="align-items:flex-start">
+        <div class="flex-1">
+          <div class="fw-700 text-sm">${esc(j.aprendiz)}</div>
+          <div class="text-xs text-muted mono">${esc(j.documento_aprendiz)}</div>
         </div>
+        <span class="badge ${c.badge}">${ic(c.icon)} ${esc(c.label)}</span>
       </div>
-    `;
-  }).join('') + (data.length > 500 ? `<div style="grid-column:1/-1; text-align:center; padding:20px; color:var(--text-muted); font-size:12px;">Mostrando los primeros 500 de ${data.length} resultados.</div>` : '');
+      <div class="juicio-rap">
+        <div class="juicio-rap-cod">${esc(j.cod_resultado)}</div>
+        <div class="juicio-rap-txt">${esc(j.resultado)}</div>
+      </div>
+      <div class="juicio-foot">
+        <span>${ic('calendar')} ${j.fecha_registro ? esc(j.fecha_registro.substring(0, 16)) : 'Sin fecha'}</span>
+        <span>Por: ${esc(j.funcionario || 'SENA')}</span>
+      </div>
+    </div>`;
+  }).join('') + (data.length > 500
+    ? `<p class="text-sm text-muted text-center" style="grid-column:1/-1;padding:14px">
+         Mostrando los primeros 500 de ${data.length} resultados.</p>`
+    : '');
 }
 
-
-
-// ── LÓGICA DE MODAL DE AVANCE (ELIMINADA) ──
-
-
-let csvJuicios = [];
-
+/* ================================================================
+   MODAL: REGISTRO MANUAL
+   ================================================================ */
 function openRegistroModal() {
-  document.getElementById('modal-registro').style.display = 'flex';
   const sel = document.getElementById('jf-aprendiz');
-  sel.innerHTML = '<option value="">Selecciona un aprendiz...</option>';
-  allAprendicesData.forEach(a => {
-    const o = document.createElement('option');
-    o.value = a.documento;
-    o.textContent = a.nombre + ' ' + a.apellidos + ' — ' + a.documento;
-    sel.appendChild(o);
-  });
+  sel.innerHTML = '<option value="">Selecciona un aprendiz…</option>' +
+    allAprendicesData.map(a =>
+      `<option value="${esc(a.documento)}">${esc(a.nombre + ' ' + a.apellidos)} — ${esc(a.documento)}</option>`).join('');
   if (document.getElementById('jf-tipo').options.length === 0) loadFormSelects();
+  openModal('modal-registro');
 }
 
 function closeRegistroModal() {
-  document.getElementById('modal-registro').style.display = 'none';
-  document.getElementById('resultados-section').style.display = 'none';
+  closeModal('modal-registro');
+  document.getElementById('resultados-section').hidden = true;
   document.getElementById('form-juicio').reset();
+  document.getElementById('juicio-result').innerHTML = '';
+  document.getElementById('resultado-status').innerHTML = '';
 }
 
 async function loadFormSelects() {
-  const [tipos, funcionarios] = await Promise.all([
-    fetch('../api/juicios.php?action=tipos').then(r => r.json()),
-    fetch('../api/juicios.php?action=funcionarios').then(r => r.json())
-  ]);
-  const selT = document.getElementById('jf-tipo');
-  tipos.forEach(t => { const o = document.createElement('option'); o.value = t.nombre; o.textContent = t.nombre; selT.appendChild(o); });
-  const selF = document.getElementById('jf-funcionario');
-  if(!funcionarios.length){ const o = document.createElement('option'); o.value = '00000000'; o.textContent = '(Sin funcionario)'; selF.appendChild(o); }
-  funcionarios.forEach(f => { const o = document.createElement('option'); o.value = f.documento; o.textContent = f.nombre_completo; selF.appendChild(o); });
+  try {
+    const [tipos, funcionarios] = await Promise.all([
+      fetch('../api/juicios.php?action=tipos').then(r => r.json()),
+      fetch('../api/juicios.php?action=funcionarios').then(r => r.json())
+    ]);
+    document.getElementById('jf-tipo').innerHTML =
+      tipos.map(t => `<option value="${esc(t.nombre)}">${esc(t.nombre)}</option>`).join('');
+    document.getElementById('jf-funcionario').innerHTML =
+      (funcionarios.length ? '' : '<option value="00000000">(Sin funcionario)</option>') +
+      funcionarios.map(f => `<option value="${esc(f.documento)}">${esc(f.nombre_completo)}</option>`).join('');
+  } catch (e) {}
 }
 
 async function loadResultadosParaAprendiz() {
   const doc = document.getElementById('jf-aprendiz').value;
-  if (!doc) { document.getElementById('resultados-section').style.display = 'none'; return; }
-  
-  document.getElementById('resultados-section').style.display = 'block';
+  const section = document.getElementById('resultados-section');
+  if (!doc) { section.hidden = true; return; }
+  section.hidden = false;
+
   const data = await fetch('../api/juicios.php?action=resultados_by_aprendiz&documento=' + encodeURIComponent(doc)).then(r => r.json());
   const sel = document.getElementById('jf-resultado');
-  sel.innerHTML = '<option value="">Selecciona un resultado...</option>';
-  let lastComp = '';
+  sel.innerHTML = '<option value="">Selecciona un resultado…</option>';
+
+  let lastComp = '', og = null;
   data.forEach(r => {
-    if (r.competencia !== lastComp) { const og = document.createElement('optgroup'); og.label = '📚 ' + r.competencia; sel.appendChild(og); lastComp = r.competencia; }
-    const o = document.createElement('option'); o.value = r.id_resultado; o.textContent = r.codigo + ' — ' + r.descripcion.substring(0,60); o.dataset.juicio = r.juicio_actual || ''; sel.appendChild(o);
+    if (r.competencia !== lastComp) {
+      og = document.createElement('optgroup');
+      og.label = r.competencia;
+      sel.appendChild(og);
+      lastComp = r.competencia;
+    }
+    const o = document.createElement('option');
+    o.value = r.id_resultado;
+    o.textContent = r.codigo + ' — ' + r.descripcion.substring(0, 60);
+    o.dataset.juicio = r.juicio_actual || '';
+    (og || sel).appendChild(o);
   });
 }
 
 function checkResultadoStatus() {
   const sel = document.getElementById('jf-resultado');
-  const opt = sel.options[sel.selectedIndex];
-  const juicio = opt?.dataset?.juicio;
-  const div = document.getElementById('resultado-status');
-  if (juicio) div.innerHTML = `<div class="alert alert-warning">⚠️ Ya existe juicio <strong>${esc(juicio)}</strong>. Al guardar, se actualizará.</div>`;
-  else div.innerHTML = '';
+  const juicio = sel.options[sel.selectedIndex]?.dataset?.juicio;
+  document.getElementById('resultado-status').innerHTML = juicio
+    ? `<div class="alert alert-warning">${ic('alert-triangle')}<div>Ya existe un juicio <strong>${esc(juicio)}</strong>. Al guardar, se actualizará.</div></div>`
+    : '';
 }
 
 async function saveJuicio(e) {
   e.preventDefault();
   const data = Object.fromEntries(new FormData(e.target));
   data.documento_aprendiz = document.getElementById('jf-aprendiz').value;
-  const btn = document.getElementById('btn-save-juicio'); btn.disabled = true;
-  
-  const r = await fetch('../api/juicios.php?action=save', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) }).then(r => r.json());
+
+  const btn = document.getElementById('btn-save-juicio');
   const res = document.getElementById('juicio-result');
-  if (r.ok) {
-    res.innerHTML = '<div class="alert alert-success" style="margin-bottom:12px;">✅ Juicio guardado.</div>';
-    loadJuicios(); loadMeta(); // Actualizar KPIs y tabla
-    setTimeout(closeRegistroModal, 1500);
-  } else res.innerHTML = `<div class="alert alert-danger" style="margin-bottom:12px;">❌ ${esc(r.error)}</div>`;
-  btn.disabled = false; setTimeout(() => res.innerHTML = '', 5000);
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner spinner-sm"></span> Guardando…';
+
+  try {
+    const r = await fetch('../api/juicios.php?action=save', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+    }).then(r => r.json());
+
+    if (r.ok) {
+      res.innerHTML = `<div class="alert alert-success">${ic('check-circle')}<div>Juicio guardado correctamente.</div></div>`;
+      showToast('Juicio guardado.', 'success');
+      loadJuicios(); loadMeta(); loadAprendices();
+      setTimeout(closeRegistroModal, 1200);
+    } else {
+      res.innerHTML = `<div class="alert alert-danger">${ic('x-circle')}<div>${esc(r.error)}</div></div>`;
+    }
+  } catch (err) {
+    res.innerHTML = `<div class="alert alert-danger">${ic('x-circle')}<div>Error de red al guardar.</div></div>`;
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = ic('save') + ' Guardar juicio';
 }
 
-// ── IMPORTACIÓN MASIVA CSV ──
-function openImportModal() { document.getElementById('modal-import').style.display = 'flex'; }
-function closeImportModal() { document.getElementById('modal-import').style.display = 'none'; cancelJuiciosImport(); }
+/* ================================================================
+   MODAL: IMPORTACIÓN CSV
+   ================================================================ */
+function openImportModal() { openModal('modal-import'); }
+function closeImportModal() { closeModal('modal-import'); cancelJuiciosImport(); }
 
 function handleFileJuicios(file) {
   if (!file) return;
-  // Cargar PapaParse dinámicamente si no existe
-  if (typeof Papa === 'undefined') {
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js';
-    script.onload = () => parseJuiciosCSV(file);
-    document.head.appendChild(script);
-  } else {
-    parseJuiciosCSV(file);
-  }
-}
-
-function parseJuiciosCSV(file) {
   Papa.parse(file, {
     header: true, skipEmptyLines: true,
     complete: r => { csvJuicios = r.data; showJuiciosPreview(r.data); }
@@ -857,36 +834,57 @@ function parseJuiciosCSV(file) {
 }
 
 function showJuiciosPreview(rows) {
-  document.getElementById('jpreview-section').style.display = 'block';
-  document.getElementById('jpreview-count').textContent = rows.length + ' filas detectadas';
+  document.getElementById('jpreview-section').hidden = false;
+  document.getElementById('jpreview-count').textContent = `${rows.length} filas detectadas — se muestran las primeras 50`;
   document.getElementById('jpreview-body').innerHTML = rows.slice(0, 50).map((r, i) => `
-    <tr><td>${i+1}</td><td style="font-family:monospace;font-size:12px">${esc(r.documento_aprendiz||r.DOCUMENTO_APRENDIZ||'')}</td>
-    <td>${esc(r.codigo_resultado||r.CODIGO_RESULTADO||'')}</td>
-    <td><span class="badge badge-info">${esc(r.tipo_juicio||r.TIPO_JUICIO||'Aprobado')}</span></td></tr>
-  `).join('');
+    <tr>
+      <td class="text-muted">${i + 1}</td>
+      <td class="mono text-sm">${esc(r.documento_aprendiz || r.DOCUMENTO_APRENDIZ || '')}</td>
+      <td class="mono text-sm">${esc(r.codigo_resultado || r.CODIGO_RESULTADO || '')}</td>
+      <td><span class="badge badge-info">${esc(r.tipo_juicio || r.TIPO_JUICIO || 'Aprobado')}</span></td>
+    </tr>`).join('');
 }
 
 async function doJuiciosImport() {
-  const btn = document.getElementById('btn-jimport'); btn.disabled = true; btn.textContent = 'Importando...';
-  const r = await fetch('../api/juicios.php?action=bulk', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({rows:csvJuicios}) }).then(r => r.json());
+  const btn = document.getElementById('btn-jimport');
   const res = document.getElementById('jimport-result');
-  if (r.error) res.innerHTML = `<div class="alert alert-danger">❌ ${esc(r.error)}</div>`;
-  else {
-    res.innerHTML = `<div class="alert alert-success">✅ ${r.insertados} insertados, ${r.actualizados} actualizados.</div>`;
-    loadJuicios(); loadMeta(); // Actualizar datos
-    setTimeout(closeImportModal, 2500);
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner spinner-sm"></span> Importando…';
+
+  try {
+    const r = await fetch('../api/juicios.php?action=bulk', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rows: csvJuicios })
+    }).then(r => r.json());
+
+    if (r.error) {
+      res.innerHTML = `<div class="alert alert-danger">${ic('x-circle')}<div>${esc(r.error)}</div></div>`;
+    } else {
+      res.innerHTML = `<div class="alert alert-success">${ic('check-circle')}<div>${r.insertados} insertados, ${r.actualizados} actualizados.</div></div>`;
+      showToast('Importación completada.', 'success');
+      loadJuicios(); loadMeta(); loadAprendices();
+      setTimeout(closeImportModal, 1800);
+    }
+  } catch (e) {
+    res.innerHTML = `<div class="alert alert-danger">${ic('x-circle')}<div>Error de red durante la importación.</div></div>`;
   }
-  btn.disabled = false; btn.textContent = '⬆️ Confirmar Importación';
+
+  btn.disabled = false;
+  btn.innerHTML = ic('upload') + ' Confirmar importación';
 }
 
 function cancelJuiciosImport() {
-  document.getElementById('jpreview-section').style.display = 'none';
+  document.getElementById('jpreview-section').hidden = true;
   document.getElementById('file-juicios').value = '';
-  csvJuicios = [];
   document.getElementById('jimport-result').innerHTML = '';
+  csvJuicios = [];
 }
 
-function esc(str) { return String(str??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+/* Arrastrar y soltar sobre la zona de importación */
+const dzJ = document.getElementById('dz-juicios');
+dzJ.addEventListener('dragover', e => { e.preventDefault(); dzJ.classList.add('dragover'); });
+dzJ.addEventListener('dragleave', () => dzJ.classList.remove('dragover'));
+dzJ.addEventListener('drop', e => { e.preventDefault(); dzJ.classList.remove('dragover'); handleFileJuicios(e.dataTransfer.files[0]); });
+
 init();
 </script>
 

@@ -1,272 +1,314 @@
 <?php
 define('ROOT_PATH', dirname(__DIR__));
-$ficha = $_GET['ficha'] ?? '';
+$ficha     = $_GET['ficha'] ?? '';
 $documento = $_GET['documento'] ?? '';
 
 if (!$ficha || !$documento) { header('Location: fichas.php'); exit; }
 
 $pageTitle    = 'Seguimiento de Aprendiz';
-$pageSubtitle = 'Detalle individual de juicios y avance de competencias';
-$activePage   = 'fichas';
+$pageSubtitle = 'Detalle individual de juicios y avance por competencia';
+$activePage   = 'aprendices';
+
+require_once ROOT_PATH . '/assets/icons.php';
+$pageActions = '<a href="ficha_detalle.php?ficha=' . urlencode($ficha) . '" class="btn btn-outline btn-sm">'
+             . icon('arrow-left') . ' Volver a la ficha ' . htmlspecialchars($ficha) . '</a>';
+
 require_once ROOT_PATH . '/includes/header.php';
 ?>
 
-<div class="fade-in" style="margin-bottom: 24px;">
-    <nav style="margin-bottom:16px;">
-        <a href="ficha_detalle.php?ficha=<?php echo urlencode($ficha); ?>" style="color:var(--sena-blue); text-decoration:none; font-weight:600; font-size:14px;">
-            ← Volver a la Ficha <?php echo htmlspecialchars($ficha); ?>
-        </a>
-    </nav>
-
-    <!-- Info Card -->
-    <div class="card" style="margin-bottom:24px; border-left: 4px solid var(--sena-blue);">
-        <div class="card-header">
-            <div>
-                <div class="card-title" id="ap-nombre-completo" style="font-size:20px;">Cargando aprendiz...</div>
-                <div class="card-subtitle" id="ap-documento">Doc: <?php echo htmlspecialchars($documento); ?></div>
-            </div>
-            <div id="ap-estado-badge"></div>
-        </div>
+<!-- ══ IDENTIDAD DEL APRENDIZ ══ -->
+<div class="card ap-header mb-5">
+  <div class="ap-avatar" id="ap-avatar">—</div>
+  <div class="flex-1">
+    <div class="cluster-sm">
+      <h2 class="ap-title" id="ap-nombre-completo">Cargando aprendiz…</h2>
+      <span id="ap-estado-badge"></span>
     </div>
-
-    <!-- KPIs -->
-    <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:24px;">
-        <div class="kpi-card" style="--kpi-color:var(--sena-green); cursor:pointer;" onclick="setFilter('Aprobado')">
-            <div class="kpi-icon">✅</div>
-            <div class="kpi-value" id="av-aprobados">0</div>
-            <div class="kpi-label">Resultados Aprobados</div>
-        </div>
-        <div class="kpi-card" style="--kpi-color:var(--danger); cursor:pointer;" onclick="setFilter('No Aprobado')">
-            <div class="kpi-icon">❌</div>
-            <div class="kpi-value" id="av-noaprobados">0</div>
-            <div class="kpi-label">No Aprobados</div>
-        </div>
-        <div class="kpi-card" style="--kpi-color:var(--warning); cursor:pointer;" onclick="setFilter('Por evaluar')">
-            <div class="kpi-icon">⏳</div>
-            <div class="kpi-value" id="av-pendientes-k">0</div>
-            <div class="kpi-label">Por evaluar</div>
-        </div>
-        <div class="kpi-card" style="--kpi-color:var(--info); cursor:pointer;" onclick="setFilter('all')">
-            <div class="kpi-icon">🎯</div>
-            <div class="kpi-value" id="av-pct-global">0%</div>
-            <div class="kpi-label">Avance Global (Ver todos)</div>
-        </div>
+    <div class="cluster text-sm text-secondary" style="margin-top:4px">
+      <span><?= icon('user') ?> <span class="mono"><?= htmlspecialchars($documento) ?></span></span>
+      <span><?= icon('school') ?> Ficha <span class="mono"><?= htmlspecialchars($ficha) ?></span></span>
+      <span id="ap-programa"></span>
     </div>
-
-    <div class="grid-2" style="grid-template-columns: 1fr 350px; gap:24px;">
-        <!-- Left Column: Table -->
-        <div class="card">
-            <div class="card-header" style="flex-wrap:wrap; gap:12px;">
-                <div>
-                    <div class="card-title">📋 Detalle de Resultados de Aprendizaje</div>
-                    <div class="card-subtitle">Listado completo de juicios registrados</div>
-                </div>
-                <div style="display:flex; gap:8px;">
-                    <div style="position:relative; width:200px;">
-                        <span style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--text-muted);">🔍</span>
-                        <input type="text" id="av-search-input" class="form-control" placeholder="Buscar RAP o Código..." style="padding-left:32px;" oninput="renderTable()">
-                    </div>
-                </div>
-            </div>
-            <div class="table-wrap">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Competencia / Resultado</th>
-                            <th style="width:120px;">Estado</th>
-                            <th style="width:180px;">Registro</th>
-                        </tr>
-                    </thead>
-                    <tbody id="av-detalle-body">
-                        <tr><td colspan="3" style="text-align:center; padding:40px;"><span class="spinner"></span></td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Right Column: Stats & Charts -->
-        <div style="display:flex; flex-direction:column; gap:24px;">
-            <div class="card">
-                <div class="card-header"><div class="card-title" style="font-size:14px;">📊 Desempeño por Competencia</div></div>
-                <div style="height:300px; padding:16px;"><canvas id="chart-avance-comp"></canvas></div>
-            </div>
-            <div class="card">
-                <div class="card-header"><div class="card-title" style="font-size:14px;">📊 Resumen Visual</div></div>
-                <div id="av-comp-list" style="padding:16px;"></div>
-            </div>
-        </div>
-    </div>
+  </div>
+  <div class="ap-global">
+    <div class="ap-global-val" id="av-pct-global">0%</div>
+    <div class="ap-global-lbl">Avance global</div>
+  </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-const FICHA = <?php echo json_encode($ficha); ?>;
-const DOC = <?php echo json_encode($documento); ?>;
-const API = '../api/competencias.php';
+<!-- ══ KPIs — actúan como filtros de la tabla ══ -->
+<div class="kpi-grid mb-5" id="kpi-filters">
+  <button type="button" class="kpi-card" data-filter="Aprobado" style="--kpi-color:var(--success-solid)" onclick="setFilter('Aprobado')">
+    <div class="kpi-icon"><?= icon('check-circle') ?></div>
+    <div class="kpi-body">
+      <div class="kpi-value" id="av-aprobados">0</div>
+      <div class="kpi-label">Resultados aprobados</div>
+    </div>
+  </button>
+  <button type="button" class="kpi-card" data-filter="No Aprobado" style="--kpi-color:var(--danger-solid)" onclick="setFilter('No Aprobado')">
+    <div class="kpi-icon"><?= icon('x-circle') ?></div>
+    <div class="kpi-body">
+      <div class="kpi-value" id="av-noaprobados">0</div>
+      <div class="kpi-label">No aprobados</div>
+    </div>
+  </button>
+  <button type="button" class="kpi-card" data-filter="Por evaluar" style="--kpi-color:var(--warning-solid)" onclick="setFilter('Por evaluar')">
+    <div class="kpi-icon"><?= icon('clock') ?></div>
+    <div class="kpi-body">
+      <div class="kpi-value" id="av-pendientes-k">0</div>
+      <div class="kpi-label">Por evaluar</div>
+    </div>
+  </button>
+  <button type="button" class="kpi-card is-active" data-filter="all" style="--kpi-color:var(--brand)" onclick="setFilter('all')">
+    <div class="kpi-icon"><?= icon('target') ?></div>
+    <div class="kpi-body">
+      <div class="kpi-value" id="av-total">0</div>
+      <div class="kpi-label">Ver todos los RAPs</div>
+    </div>
+  </button>
+</div>
 
-let rawData = [];
-let filteredData = [];
-let currentFilter = 'all';
-let chartAvanceComp = null;
+<div class="grid-main-aside">
+  <!-- ── Tabla de resultados ── -->
+  <div class="card card-flush">
+    <div class="card-header">
+      <div>
+        <div class="card-title"><?= icon('clipboard-list') ?> Resultados de Aprendizaje</div>
+        <div class="card-subtitle" id="tabla-sub">Listado completo de juicios registrados</div>
+      </div>
+      <div class="cluster-sm">
+        <span class="badge badge-brand" id="filter-chip" hidden></span>
+        <div class="search-field" style="width:220px;flex:none">
+          <?= icon('search') ?>
+          <input type="text" id="av-search-input" class="form-control" placeholder="Buscar RAP o código…"
+                 oninput="renderTable()" aria-label="Buscar resultado de aprendizaje">
+        </div>
+      </div>
+    </div>
+    <div class="table-wrap is-scrollable">
+      <table class="table">
+        <thead>
+          <tr><th>Competencia / Resultado</th><th style="width:130px">Estado</th><th style="width:180px">Registro</th></tr>
+        </thead>
+        <tbody id="av-detalle-body">
+          <tr><td colspan="3"><span class="skeleton skeleton-row"></span></td></tr>
+          <tr><td colspan="3"><span class="skeleton skeleton-row"></span></td></tr>
+          <tr><td colspan="3"><span class="skeleton skeleton-row"></span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Panel lateral ── -->
+  <div class="stack-lg">
+    <div class="card">
+      <div class="card-header mb-3">
+        <div class="card-title"><?= icon('chart-pie') ?> Distribución de juicios</div>
+      </div>
+      <div class="chart-container" style="height:200px"><canvas id="chart-dist"></canvas></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header mb-3">
+        <div>
+          <div class="card-title"><?= icon('activity') ?> Avance por competencia</div>
+          <div class="card-subtitle">RAPs aprobados sobre el total</div>
+        </div>
+      </div>
+      <div class="stack-sm" id="av-comp-list"></div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .ap-header { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; border-left: 3px solid var(--brand); }
+  .ap-avatar {
+    width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--brand), var(--green));
+    color: #fff; font-weight: 800; font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ap-title { font-size: 19px; font-weight: 800; letter-spacing: -.02em; }
+  .ap-header .cluster .ic { width: 14px; height: 14px; color: var(--text-muted); }
+  .ap-global { text-align: right; padding-left: var(--space-4); border-left: 1px solid var(--border); }
+  .ap-global-val { font-size: 32px; font-weight: 800; line-height: 1; color: var(--brand-text); letter-spacing: -.03em; }
+  .ap-global-lbl { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; margin-top: 3px; }
+  @media (max-width: 720px) { .ap-global { border-left: none; padding-left: 0; text-align: left; } }
+
+  #kpi-filters .kpi-card { text-align: left; font: inherit; }
+  #kpi-filters .kpi-card.is-active { border-color: var(--kpi-color); box-shadow: var(--shadow-ring); }
+
+  .comp-row-name {
+    font-size: 12px; font-weight: 600;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .comp-group-row td {
+    background: var(--bg-subtle); font-weight: 700; font-size: 11.5px;
+    color: var(--brand-text); text-transform: uppercase; letter-spacing: .04em;
+    position: sticky; top: 33px; z-index: 1;
+  }
+  .rap-cell { padding-left: 28px !important; }
+</style>
+
+<script>
+const FICHA = <?= json_encode($ficha) ?>;
+const DOC   = <?= json_encode($documento) ?>;
+const API   = '../api/competencias.php';
+
+let rawData = [], compData = [], currentFilter = 'all', chartDist = null;
 
 async function init() {
-    try {
-        const [compData, detalle, aprendices] = await Promise.all([
-            fetch(API + '?action=avance_aprendiz&documento=' + encodeURIComponent(DOC)).then(r => r.json()),
-            fetch(API + '?action=detalle_aprendiz&documento=' + encodeURIComponent(DOC)).then(r => r.json()),
-            fetch('../api/ficha_detalle.php?action=aprendices&ficha=' + encodeURIComponent(FICHA)).then(r => r.json())
-        ]);
+  try {
+    const [comp, detalle, aprendices] = await Promise.all([
+      fetch(API + '?action=avance_aprendiz&documento=' + encodeURIComponent(DOC)).then(r => r.json()),
+      fetch(API + '?action=detalle_aprendiz&documento=' + encodeURIComponent(DOC)).then(r => r.json()),
+      fetch('../api/ficha_detalle.php?action=aprendices&ficha=' + encodeURIComponent(FICHA)).then(r => r.json())
+    ]);
 
-        const aprendiz = aprendices.find(a => a.documento === DOC);
-        if (aprendiz) {
-            document.getElementById('ap-nombre-completo').textContent = aprendiz.nombre + ' ' + aprendiz.apellidos;
-            const eb = {'Activo':'badge-success','Retiro Voluntario':'badge-warning','Deserción':'badge-danger'};
-            document.getElementById('ap-estado-badge').innerHTML = `<span class="badge ${eb[aprendiz.estado]||'badge-muted'}">${aprendiz.estado}</span>`;
-        }
-
-        rawData = detalle;
-        updateKPIs(detalle);
-        renderTable();
-        renderCharts(compData);
-        renderCompList(compData);
-    } catch (e) {
-        console.error(e);
+    const aprendiz = aprendices.find(a => a.documento === DOC);
+    if (aprendiz) {
+      const nombre = `${aprendiz.nombre} ${aprendiz.apellidos}`;
+      document.getElementById('ap-nombre-completo').textContent = nombre;
+      document.getElementById('ap-avatar').textContent = iniciales(aprendiz.nombre, aprendiz.apellidos);
+      
+      document.getElementById('ap-estado-badge').innerHTML =
+        `<span class="badge ${badgeEstado(aprendiz.estado)}">${esc(aprendiz.estado)}</span>`;
+      if (aprendiz.programa) {
+        document.getElementById('ap-programa').innerHTML = ic('book') + ' ' + esc(aprendiz.programa);
+      }
+    } else {
+      document.getElementById('ap-nombre-completo').textContent = 'Aprendiz no encontrado en esta ficha';
     }
+
+    rawData  = detalle;
+    compData = comp;
+    updateKPIs(detalle);
+    renderTable();
+    renderDistChart();
+    renderCompList();
+  } catch (e) {
+    showToast('No se pudo cargar el seguimiento del aprendiz.', 'danger');
+  }
 }
 
+function iniciales(n, a) {
+  return ((n || '').trim()[0] || '') + ((a || '').trim()[0] || '') || '—';
+}
+
+/** Normaliza el juicio a una de las cuatro categorías del sistema. */
+function juicioDe(d) {
+  const j = (d.juicio || '').trim().toLowerCase();
+  if (j === 'aprobado') return 'Aprobado';
+  if (j === 'no aprobado') return 'No Aprobado';
+  if (j === '' || j === 'null' || j === 'por evaluar') return 'Por evaluar';
+  return d.juicio.trim();
+}
+
+const JUICIO_BADGE = { 'Aprobado': 'badge-success', 'No Aprobado': 'badge-danger', 'Por evaluar': 'badge-warning' };
+
 function updateKPIs(data) {
-    const aprobados = data.filter(d => (d.juicio || '').trim().toLowerCase() === 'aprobado').length;
-    const noAprob = data.filter(d => (d.juicio || '').trim().toLowerCase() === 'no aprobado').length;
-    
-    // "Por evaluar" son los que están vacíos, nulos o explícitamente dicen "por evaluar"
-    const pendientes = data.filter(d => {
-        const j = (d.juicio || '').trim().toLowerCase();
-        return j === '' || j === 'por evaluar' || j === 'null';
-    }).length;
-
-    const totalR = data.length;
-    const pctGlobal = totalR > 0 ? Math.round(aprobados / totalR * 100) : 0;
-
-    document.getElementById('av-aprobados').textContent = aprobados;
-    document.getElementById('av-noaprobados').textContent = noAprob;
-    document.getElementById('av-pendientes-k').textContent = pendientes;
-    document.getElementById('av-pct-global').textContent = pctGlobal + '%';
+  const cuenta = t => data.filter(d => juicioDe(d) === t).length;
+  const aprob = cuenta('Aprobado');
+  document.getElementById('av-aprobados').textContent    = aprob;
+  document.getElementById('av-noaprobados').textContent  = cuenta('No Aprobado');
+  document.getElementById('av-pendientes-k').textContent = cuenta('Por evaluar');
+  document.getElementById('av-total').textContent        = data.length;
+  document.getElementById('av-pct-global').textContent   = (data.length ? Math.round(aprob / data.length * 100) : 0) + '%';
 }
 
 function setFilter(f) {
-    currentFilter = f;
-    renderTable();
-    
-    // Highlight active card
-    document.querySelectorAll('.kpi-card').forEach(c => c.style.boxShadow = 'none');
-    const labels = {'Aprobado':0, 'No Aprobado':1, 'Por evaluar':2, 'all':3};
-    const cards = document.querySelectorAll('.kpi-card');
-    if(cards[labels[f]]) cards[labels[f]].style.boxShadow = '0 0 0 2px var(--sena-blue)';
+  currentFilter = f;
+  document.querySelectorAll('#kpi-filters .kpi-card').forEach(c =>
+    c.classList.toggle('is-active', c.dataset.filter === f));
+
+  const chip = document.getElementById('filter-chip');
+  chip.hidden = f === 'all';
+  if (f !== 'all') chip.innerHTML = ic('filter') + ' ' + esc(f);
+
+  renderTable();
 }
 
 function renderTable() {
-    const q = document.getElementById('av-search-input').value.toLowerCase().trim();
-    const tb = document.getElementById('av-detalle-body');
-    
-    filteredData = rawData.filter(d => {
-        const matchSearch = d.codigo.toLowerCase().includes(q) || d.descripcion.toLowerCase().includes(q) || d.competencia.toLowerCase().includes(q);
-        let matchType = true;
-        if (currentFilter !== 'all') {
-            const juic = (d.juicio || 'Pendiente').trim().toLowerCase();
-            matchType = juic === currentFilter.toLowerCase();
-        }
-        return matchSearch && matchType;
-    });
+  const q  = document.getElementById('av-search-input').value.toLowerCase().trim();
+  const tb = document.getElementById('av-detalle-body');
 
-    if (!filteredData.length) {
-        tb.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:40px; color:var(--text-muted);">No se encontraron resultados</td></tr>';
-        return;
+  const data = rawData.filter(d => {
+    const matchSearch = !q ||
+      `${d.codigo} ${d.descripcion} ${d.competencia}`.toLowerCase().includes(q);
+    const matchType = currentFilter === 'all' || juicioDe(d) === currentFilter;
+    return matchSearch && matchType;
+  });
+
+  document.getElementById('tabla-sub').textContent =
+    `${data.length} de ${rawData.length} resultados de aprendizaje`;
+
+  if (!data.length) {
+    tb.innerHTML = `<tr><td colspan="3"><div class="empty-state">
+      <div class="empty-icon">${ic('search')}</div>
+      <div class="empty-title">Sin resultados</div>
+      <p>Ningún RAP coincide con el filtro o la búsqueda actual.</p>
+    </div></td></tr>`;
+    return;
+  }
+
+  let lastComp = '';
+  tb.innerHTML = data.map(d => {
+    let header = '';
+    if (d.competencia !== lastComp) {
+      header = `<tr class="comp-group-row"><td colspan="3">${esc(d.competencia)}</td></tr>`;
+      lastComp = d.competencia;
     }
-
-    let lastComp = '';
-    tb.innerHTML = filteredData.map(d => {
-        let compHeader = '';
-        if (d.competencia !== lastComp) {
-            compHeader = `<tr><td colspan="3" style="background:rgba(26,77,181,0.03); font-weight:700; color:var(--sena-blue); font-size:12px; padding:12px 16px;">📚 ${esc(d.competencia)}</td></tr>`;
-            lastComp = d.competencia;
-        }
-
-        const juic = (d.juicio || 'Por evaluar').trim();
-        let statusClass = 'badge-muted';
-        const jLower = juic.toLowerCase();
-        
-        if(jLower === 'aprobado') statusClass = 'badge-success';
-        else if(jLower === 'no aprobado') statusClass = 'badge-danger';
-        else if(jLower === 'por evaluar' || jLower === '' || jLower === 'null') statusClass = 'badge-warning';
-
-        return compHeader + `
-            <tr>
-                <td style="padding-left:32px;">
-                    <div style="font-size:11px; color:var(--text-muted); font-family:monospace;">${esc(d.codigo)}</div>
-                    <div style="font-size:13px; font-weight:500; line-height:1.4;">${esc(d.descripcion)}</div>
-                </td>
-                <td style="vertical-align:middle;">
-                    <span class="badge ${statusClass}">${esc(d.juicio || 'Por evaluar')}</span>
-                </td>
-                <td>
-                    ${d.fecha_registro ? `
-                        <div style="font-size:12px; font-weight:600;">${d.fecha_registro.substring(0,16)}</div>
-                        <div style="font-size:10px; color:var(--text-secondary); text-transform:uppercase;">Por: ${esc(d.funcionario || 'SENA')}</div>
-                    ` : '<span style="color:var(--text-muted); font-style:italic; font-size:12px;">Sin registro</span>'}
-                </td>
-            </tr>
-        `;
-    }).join('');
+    const j = juicioDe(d);
+    return header + `<tr>
+      <td class="rap-cell">
+        <div class="text-xs text-muted mono">${esc(d.codigo)}</div>
+        <div class="text-sm" style="line-height:1.45">${esc(d.descripcion)}</div>
+      </td>
+      <td><span class="badge ${JUICIO_BADGE[j] || 'badge-muted'}">${esc(j)}</span></td>
+      <td>${d.fecha_registro
+        ? `<div class="text-sm fw-600 mono">${esc(d.fecha_registro.substring(0, 16))}</div>
+           <div class="text-xs text-secondary">Por: ${esc(d.funcionario || 'SENA')}</div>`
+        : '<span class="text-muted text-sm">Sin registro</span>'}
+      </td>
+    </tr>`;
+  }).join('');
 }
 
-function renderCharts(compData) {
-    const labels = compData.map(c => c.competencia.substring(0, 20) + '...');
-    const pcts = compData.map(c => c.total_resultados > 0 ? Math.round(c.aprobados / c.total_resultados * 100) : 0);
+/* ── Donut de distribución: sustituye al gráfico de barras duplicado ── */
+function renderDistChart() {
+  const orden = ['Aprobado', 'No Aprobado', 'Por evaluar'];
+  const conteo = orden.map(t => rawData.filter(d => juicioDe(d) === t).length);
+  const colores = [token('success-solid'), token('danger-solid'), token('warning-solid')];
 
-    if(chartAvanceComp) chartAvanceComp.destroy();
-    chartAvanceComp = new Chart(document.getElementById('chart-avance-comp'), {
-        type: 'bar',
-        data: {
-            labels,
-            datasets: [{
-                label: '% Aprobado',
-                data: pcts,
-                backgroundColor: 'rgba(0,166,80,0.6)',
-                borderColor: 'var(--sena-green)',
-                borderWidth: 1,
-                borderRadius: 4
-            }]
-        },
-        options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: { 
-                x: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } },
-                y: { ticks: { font: { size: 10 } } }
-            },
-            plugins: { legend: { display: false } }
-        }
-    });
+  if (chartDist) chartDist.destroy();
+  chartDist = new Chart(document.getElementById('chart-dist'), {
+    type: 'doughnut',
+    data: { labels: orden, datasets: [{ data: conteo, backgroundColor: colores, borderWidth: 2, borderColor: token('bg-card') }] },
+    options: { cutout: '64%', plugins: { legend: { position: 'bottom' } } }
+  });
 }
 
-function renderCompList(compData) {
-    document.getElementById('av-comp-list').innerHTML = compData.map(c => {
-        const pct = c.total_resultados > 0 ? Math.round(c.aprobados / c.total_resultados * 100) : 0;
-        const color = pct >= 80 ? 'green' : pct >= 50 ? 'warn' : 'danger';
-        return `
-            <div style="margin-bottom:12px;">
-                <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                    <span style="font-size:11px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px;">${esc(c.competencia)}</span>
-                    <span style="font-size:10px; color:var(--text-secondary);">${c.aprobados}/${c.total_resultados}</span>
-                </div>
-                <div class="progress-bar-wrap" style="height:6px;"><div class="progress-bar ${color}" style="width:${pct}%"></div></div>
-            </div>
-        `;
-    }).join('');
+function renderCompList() {
+  const cont = document.getElementById('av-comp-list');
+  if (!compData.length) {
+    cont.innerHTML = `<p class="text-sm text-muted text-center">Sin competencias asociadas.</p>`;
+    return;
+  }
+  cont.innerHTML = compData.map(c => {
+    const pct = c.total_resultados > 0 ? Math.round(c.aprobados / c.total_resultados * 100) : 0;
+    const color = pct >= 80 ? 'green' : pct >= 50 ? 'warn' : 'danger';
+    return `<div>
+      <div class="cluster-between" style="gap:8px;margin-bottom:4px">
+        <span class="comp-row-name" title="${esc(c.competencia)}">${esc(c.competencia)}</span>
+        <span class="text-xs text-secondary mono" style="flex-shrink:0">${c.aprobados}/${c.total_resultados}</span>
+      </div>
+      <div class="progress-bar-wrap"><div class="progress-bar ${color}" style="width:${pct}%"></div></div>
+    </div>`;
+  }).join('');
 }
 
-function esc(str) { return String(str??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+document.addEventListener('themechange', () => { if (rawData.length) renderDistChart(); });
+
 init();
 </script>
 

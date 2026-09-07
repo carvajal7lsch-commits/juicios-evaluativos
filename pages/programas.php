@@ -6,78 +6,82 @@ $activePage   = 'programas';
 require_once ROOT_PATH . '/includes/header.php';
 ?>
 
-<div class="card fade-in">
-  <div class="card-header">
-    <div>
-      <div class="card-title">📚 Programas de Formación</div>
-      <div class="card-subtitle" id="programas-count">Cargando...</div>
-    </div>
+<!-- Toolbar: búsqueda + contador, sin envolverla en un card entero -->
+<div class="toolbar mb-5">
+  <div class="search-field">
+    <?= icon('search') ?>
+    <input type="text" id="search-programa" class="form-control"
+           placeholder="Buscar por código o nombre del programa..." oninput="filterProgramas()"
+           aria-label="Buscar programa" />
   </div>
+  <div class="toolbar-sep" aria-hidden="true"></div>
+  <span class="text-sm text-secondary" id="programas-count">Cargando…</span>
+</div>
 
-  <!-- Búsqueda -->
-  <div class="filters-bar" style="margin-bottom:16px; display:flex; gap:12px; align-items:center;">
-    <div class="filter-search" style="max-width:400px; flex:1;">
-      <span class="search-icon">🔍</span>
-      <input type="text" id="search-programa" class="form-control" placeholder="Buscar por código o nombre del programa..." oninput="filterProgramas()" />
-    </div>
-  </div>
-
-  <div class="f-grid" id="grid-programas">
-    <div style="grid-column: 1 / -1; text-align: center; padding: 32px;">
-      <span class="spinner"></span>
-    </div>
-  </div>
+<div class="grid-cards" id="grid-programas">
+  <div class="card"><span class="skeleton skeleton-text" style="width:35%"></span><span class="skeleton skeleton-text" style="width:85%;height:18px"></span><span class="skeleton skeleton-row"></span></div>
+  <div class="card"><span class="skeleton skeleton-text" style="width:35%"></span><span class="skeleton skeleton-text" style="width:70%;height:18px"></span><span class="skeleton skeleton-row"></span></div>
+  <div class="card"><span class="skeleton skeleton-text" style="width:35%"></span><span class="skeleton skeleton-text" style="width:90%;height:18px"></span><span class="skeleton skeleton-row"></span></div>
 </div>
 
 <style>
-  .f-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-    gap: 20px;
-    padding: 10px 0;
-  }
   .prog-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    padding: 24px;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: var(--shadow-sm);
+    padding: var(--space-5);
+    transition: var(--transition);
     cursor: pointer;
-    position: relative;
-    overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--space-4);
+    text-align: left;
+    width: 100%;
+    font: inherit;
+    color: inherit;
   }
   .prog-card:hover {
-    transform: translateY(-5px);
-    border-color: var(--sena-green);
-    box-shadow: 0 12px 24px rgba(0,166,80,0.1);
+    transform: translateY(-2px);
+    border-color: var(--green-soft-bd);
+    box-shadow: var(--shadow-md);
   }
-  .prog-card::after {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0; height: 4px;
-    background: var(--sena-green);
-    opacity: 0; transition: 0.3s;
+  .pc-code {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 11.5px; font-weight: 700;
+    color: var(--text-secondary);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    padding: 3px 8px; border-radius: var(--radius-sm);
+    align-self: flex-start;
   }
-  .prog-card:hover::after { opacity: 1; }
-
-  .pc-header { display: flex; justify-content: space-between; align-items: flex-start; }
-  .pc-code { font-family: monospace; font-size: 14px; font-weight: 700; color: var(--text-muted); background: var(--bg-input); padding: 4px 8px; border-radius: 6px; }
-  .pc-name { font-size: 16px; font-weight: 800; color: var(--text-primary); line-height: 1.4; }
-  
-  .pc-stats { display: flex; gap: 12px; }
-  .pc-stat-badge {
-    background: rgba(56,139,253,0.1); border: 1px solid rgba(56,139,253,0.2);
-    color: var(--info); padding: 8px 12px; border-radius: 8px;
-    font-size: 13px; font-weight: 600; display: flex; flex-direction: column; align-items: center; flex: 1;
+  .pc-name {
+    font-size: 15px; font-weight: 700; color: var(--text-primary);
+    line-height: 1.35; letter-spacing: -.01em;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
   }
-  .pc-stat-badge.green { background: rgba(0,166,80,0.1); border-color: rgba(0,166,80,0.2); color: var(--success); }
-  .pc-stat-badge.warn { background: rgba(210,153,34,0.1); border-color: rgba(210,153,34,0.2); color: var(--warning); }
-  .pc-stat-val { font-size: 18px; font-weight: 800; }
-  
-  .pc-footer { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .pc-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
+  .pc-stat {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 8px 6px;
+    text-align: center;
+  }
+  .pc-stat-val { font-size: 17px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .pc-stat-lbl { font-size: 10.5px; color: var(--text-secondary); font-weight: 500; margin-top: 2px; }
+  .pc-stat.is-brand .pc-stat-val { color: var(--brand-text); }
+  .pc-stat.is-green .pc-stat-val { color: var(--success); }
+  .pc-stat.is-warn  .pc-stat-val { color: var(--warning); }
+  .pc-footer {
+    margin-top: auto; padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12.5px; color: var(--text-secondary);
+  }
+  .prog-card:hover .pc-footer { color: var(--brand-text); }
+  .pc-footer .ic { transition: transform var(--transition); }
+  .prog-card:hover .pc-footer .ic { transform: translateX(3px); }
 </style>
 
 <script>
@@ -89,60 +93,65 @@ async function init() {
 }
 
 async function loadProgramas() {
-  const data = await fetch(API_PROG + '?action=list').then(r => r.json());
-  allProgramas = data;
-  renderProgramas(data);
+  try {
+    allProgramas = await fetch(API_PROG + '?action=list').then(r => r.json());
+    renderProgramas(allProgramas);
+  } catch (e) {
+    document.getElementById('grid-programas').innerHTML = emptyState(
+      'alert-triangle', 'No se pudieron cargar los programas', 'Revisa la conexión con el servidor e inténtalo de nuevo.'
+    );
+  }
+}
+
+function emptyState(iconName, title, text) {
+  return `<div class="card" style="grid-column:1/-1;">
+    <div class="empty-state">
+      <div class="empty-icon">${ic(iconName)}</div>
+      <div class="empty-title">${esc(title)}</div>
+      <p>${esc(text)}</p>
+    </div>
+  </div>`;
 }
 
 function renderProgramas(data) {
-  document.getElementById('programas-count').textContent = data.length + ' programa(s) registrados';
+  const total = allProgramas.length;
+  document.getElementById('programas-count').textContent =
+    data.length === total
+      ? `${total} programa${total === 1 ? '' : 's'} registrado${total === 1 ? '' : 's'}`
+      : `${data.length} de ${total} programas`;
+
   const grid = document.getElementById('grid-programas');
-  
+
   if (!data.length) {
-    grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding:40px; color:var(--text-secondary);">No hay programas registrados</div>';
+    grid.innerHTML = emptyState('book', 'Sin resultados',
+      total ? 'Ningún programa coincide con la búsqueda.' : 'Aún no hay programas registrados en el sistema.');
     return;
   }
 
   grid.innerHTML = data.map(p => `
-    <div class="prog-card fade-in" onclick="window.location.href='fichas.php?programa=${encodeURIComponent(p.id_programa)}'">
-      <div class="pc-header">
-        <span class="pc-code">Cód. ${esc(p.codigo)}</span>
-      </div>
+    <button type="button" class="prog-card fade-in"
+            onclick="window.location.href='fichas.php?programa=${encodeURIComponent(p.id_programa)}'">
+      <span class="pc-code">${esc(p.codigo)}</span>
       <div class="pc-name" title="${esc(p.nombre)}">${esc(p.nombre)}</div>
-      
       <div class="pc-stats">
-        <div class="pc-stat-badge">
-          <span class="pc-stat-val">${p.total_fichas}</span>
-          <span>Fichas</span>
-        </div>
-        <div class="pc-stat-badge green">
-          <span class="pc-stat-val">${p.total_aprendices}</span>
-          <span>Aprendices</span>
-        </div>
-        <div class="pc-stat-badge warn">
-          <span class="pc-stat-val">${p.total_competencias}</span>
-          <span>Competencias</span>
-        </div>
+        <div class="pc-stat is-brand"><div class="pc-stat-val">${p.total_fichas}</div><div class="pc-stat-lbl">Fichas</div></div>
+        <div class="pc-stat is-green"><div class="pc-stat-val">${p.total_aprendices}</div><div class="pc-stat-lbl">Aprendices</div></div>
+        <div class="pc-stat is-warn"><div class="pc-stat-val">${p.total_competencias}</div><div class="pc-stat-lbl">Competencias</div></div>
       </div>
-      
       <div class="pc-footer">
-        <span style="font-size:13px; color:var(--text-secondary);">Ver fichas asociadas</span>
-        <span style="color:var(--sena-green);">→</span>
+        <span>Ver fichas asociadas</span>
+        ${ic('arrow-right')}
       </div>
-    </div>
+    </button>
   `).join('');
 }
 
 function filterProgramas() {
-  const query = document.getElementById('search-programa').value.toLowerCase().trim();
-  const filtered = allProgramas.filter(p => {
-    return p.nombre.toLowerCase().includes(query) || p.codigo.toLowerCase().includes(query);
-  });
-  renderProgramas(filtered);
-}
-
-function esc(str) {
-  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const q = document.getElementById('search-programa').value.toLowerCase().trim();
+  if (!q) return renderProgramas(allProgramas);
+  renderProgramas(allProgramas.filter(p =>
+    (p.nombre || '').toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q)
+  ));
 }
 
 init();
