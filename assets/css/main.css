@@ -290,6 +290,13 @@
    ================================================================ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* El atributo `hidden` trae su display:none de la hoja del navegador, que
+   pierde por especificidad contra cualquier regla de autor. Sin esto,
+   .grid-cards{display:grid} o .selection-bar{display:flex} lo anulan y el
+   elemento se sigue viendo: así se mostraban a la vez la vista de tabla y
+   la de tarjetas, y la barra de selección con cero fichas marcadas. */
+[hidden] { display: none !important; }
+
 html {
   font-size: 16px;
   scroll-behavior: smooth;
