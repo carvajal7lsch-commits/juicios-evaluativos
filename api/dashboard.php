@@ -6,6 +6,8 @@ header('Content-Type: application/json; charset=utf-8');
 
 define('ROOT_PATH', dirname(__DIR__));
 require_once ROOT_PATH . '/config/database.php';
+require_once ROOT_PATH . '/includes/estados.php';
+require_once ROOT_PATH . '/includes/formacion.php';
 
 $db     = getDB();
 $action = $_GET['action'] ?? 'kpis';
@@ -34,6 +36,18 @@ if ($g_search) {
 
 $whereStr = implode(' AND ', $whereGlobal);
 
+// ----------------------------------------------------------------
+// Filtro que sólo toca `formacion`. Las consultas analíticas de abajo
+// usan LEFT JOIN sobre Aprendiz: meter una condición sobre `a.` en el
+// WHERE las convertiría en INNER JOIN y perderíamos las fichas sin
+// aprendices o los RAPs sin calificar, que es justo lo que queremos ver.
+// ----------------------------------------------------------------
+$whereFicha  = ['1=1'];
+$paramsFicha = [];
+if ($g_ficha) { $whereFicha[] = 'f.ficha = ?';       $paramsFicha[] = $g_ficha; }
+if ($g_prog)  { $whereFicha[] = 'f.id_programa = ?'; $paramsFicha[] = $g_prog; }
+$whereFichaStr = implode(' AND ', $whereFicha);
+
 switch ($action) {
 
   case 'kpis':
@@ -42,7 +56,7 @@ switch ($action) {
     $stmt->execute($paramsGlobal);
     $totalAprendices = $stmt->fetchColumn();
 
-    $stmt = $db->prepare("SELECT COUNT(a.documento) FROM Aprendiz a JOIN formacion f ON a.ficha = f.ficha WHERE a.estado='Activo' AND $whereStr");
+    $stmt = $db->prepare("SELECT COUNT(a.documento) FROM Aprendiz a JOIN formacion f ON a.ficha = f.ficha WHERE " . sqlAprendizActivo() . " AND $whereStr");
     $stmt->execute($paramsGlobal);
     $totalActivos = $stmt->fetchColumn();
 
@@ -78,18 +92,25 @@ switch ($action) {
       SELECT COUNT(*) FROM Aprendiz a
       JOIN formacion f ON a.ficha = f.ficha
       JOIN programa_competencia pc ON f.id_programa = pc.id_programa
-      JOIN Resultados_aprendizaje r ON pc.id_competencia = r.id_competencia
-      WHERE $whereStr
+      JOIN Competencias c ON c.id_competencia = pc.id_competencia
+      JOIN Resultados_aprendizaje r ON r.id_competencia = c.id_competencia
+      WHERE $whereStr AND " . sqlEsCompetenciaLectiva() . "
     ");
     $stmt->execute($paramsGlobal);
     $totalPosibles = $stmt->fetchColumn();
 
-    $pendientes = max(0, $totalPosibles - $totalJuicios);
+    // Trabajo realmente pendiente = todo lo que aún no está aprobado.
+    // Incluye tanto los juicios marcados 'Por evaluar' como los pares
+    // aprendiz-RAP que ni siquiera tienen fila. El cálculo anterior
+    // (posibles − juicios) sólo contaba los segundos y dejaba fuera
+    // los miles de registros explícitamente marcados por evaluar.
+    $pendientes = max(0, $totalPosibles - $totalAprobados);
 
     echo json_encode([
       'total_aprendices'   => (int)$totalAprendices,
       'activos'            => (int)$totalActivos,
       'total_juicios'      => (int)$totalJuicios,
+      'total_posibles'     => (int)$totalPosibles,
       'aprobados'          => (int)$totalAprobados,
       'no_aprobados'       => (int)$totalNoAprobados,
       'pendientes'         => (int)$pendientes,
@@ -97,53 +118,6 @@ switch ($action) {
       'total_competencias' => (int)$totalCompetencias,
       'pct_aprobacion'     => $totalJuicios > 0 ? round($totalAprobados / $totalJuicios * 100, 1) : 0,
     ]);
-    break;
-
-  case 'aprendices_por_ficha':
-    $stmt = $db->prepare("
-      SELECT f.ficha, p.nombre AS programa, COUNT(a.documento) AS total,
-             SUM(CASE WHEN a.estado='Activo' THEN 1 ELSE 0 END) AS activos
-      FROM formacion f
-      JOIN Programa p ON f.id_programa = p.id_programa
-      LEFT JOIN Aprendiz a ON a.ficha = f.ficha
-      WHERE $whereStr
-      GROUP BY f.ficha, p.nombre
-      ORDER BY total DESC
-    ");
-    $stmt->execute($paramsGlobal);
-    echo json_encode($stmt->fetchAll());
-    break;
-
-  case 'juicios_por_tipo':
-    $stmt = $db->prepare("
-      SELECT j.estado AS nombre, COUNT(j.id_juicio) AS total
-      FROM juicios_evaluativos j
-      JOIN Aprendiz a ON j.documento_aprendiz = a.documento
-      JOIN formacion f ON a.ficha = f.ficha
-      WHERE $whereStr
-      GROUP BY j.estado
-    ");
-    $stmt->execute($paramsGlobal);
-    echo json_encode($stmt->fetchAll());
-    break;
-
-  case 'avance_competencias':
-    $stmt = $db->prepare("
-      SELECT c.nombre AS competencia,
-             COUNT(DISTINCT r.id_resultado) AS total_resultados,
-             COUNT(DISTINCT CASE WHEN j.estado='Aprobado' THEN j.id_juicio END) AS aprobados
-      FROM formacion f
-      JOIN programa_competencia pc ON f.id_programa = pc.id_programa
-      JOIN Competencias c ON pc.id_competencia = c.id_competencia
-      JOIN Resultados_aprendizaje r ON r.id_competencia = c.id_competencia
-      LEFT JOIN Aprendiz a ON a.ficha = f.ficha
-      LEFT JOIN juicios_evaluativos j ON j.id_resultado = r.id_resultado AND j.documento_aprendiz = a.documento
-      WHERE $whereStr
-      GROUP BY c.id_competencia, c.nombre
-      ORDER BY c.nombre
-    ");
-    $stmt->execute($paramsGlobal);
-    echo json_encode($stmt->fetchAll());
     break;
 
   case 'tabla_aprendices':
@@ -177,6 +151,261 @@ switch ($action) {
     ");
     $stmt->execute($params);
     echo json_encode($stmt->fetchAll());
+    break;
+
+  // ================================================================
+  // DIAGRAMA DE RITMO — calendario consumido vs. avance real
+  // Una fila por ficha. No usa fecha_registro: sólo el calendario de
+  // la ficha y el conteo de RAPs aprobados, así que cubre el 100% de
+  // los datos aunque la mayoría de juicios no tengan fecha.
+  // ================================================================
+  case 'ritmo_fichas':
+    $stmt = $db->prepare("
+      SELECT f.ficha,
+             f.estado          AS estado_ficha,
+             f.fecha_inicio,
+             f.fecha_fin,
+             p.nombre          AS programa,
+             COUNT(DISTINCT CASE WHEN " . sqlAprendizActivo() . " THEN a.documento END) AS activos,
+             COUNT(DISTINCT r.id_resultado)                                     AS raps_programa,
+             COUNT(DISTINCT CASE WHEN j.estado = 'Aprobado'
+                                 THEN CONCAT(j.documento_aprendiz, '-', j.id_resultado) END) AS aprobados
+      FROM formacion f
+      JOIN Programa p                  ON p.id_programa    = f.id_programa
+      LEFT JOIN Aprendiz a             ON a.ficha          = f.ficha AND " . sqlAprendizActivo() . "
+      LEFT JOIN programa_competencia pc ON pc.id_programa  = f.id_programa
+      -- Sólo competencias de etapa lectiva: los RAPs de la etapa productiva
+      -- se evalúan al final y contarlos ahora hunde el avance artificialmente.
+      LEFT JOIN Competencias c         ON c.id_competencia = pc.id_competencia
+                                      AND " . sqlEsCompetenciaLectiva() . "
+      LEFT JOIN Resultados_aprendizaje r ON r.id_competencia = c.id_competencia
+      LEFT JOIN juicios_evaluativos j  ON j.documento_aprendiz = a.documento
+                                      AND j.id_resultado       = r.id_resultado
+      WHERE $whereFichaStr
+      GROUP BY f.ficha, f.estado, f.fecha_inicio, f.fecha_fin, p.nombre
+      HAVING activos > 0 AND raps_programa > 0
+      ORDER BY f.ficha
+    ");
+    $stmt->execute($paramsFicha);
+
+    $hoy  = new DateTime('today');
+    $out  = [];
+    foreach ($stmt->fetchAll() as $r) {
+        $ini = new DateTime($r['fecha_inicio']);
+        $finFicha = new DateTime($r['fecha_fin']);
+
+        // El horizonte es el cierre de la LECTIVA, no el de la ficha: los
+        // juicios lectivos deben estar puestos antes de la etapa productiva.
+        $finLectiva = finEtapaLectiva($r['fecha_fin']);
+
+        $duracion = (int)$ini->diff($finLectiva)->days;
+        if ($duracion <= 0 || $finLectiva <= $ini) continue; // fechas inconsistentes
+
+        $transcurrido = (int)$ini->diff($hoy)->days;
+        if ($hoy < $ini) $transcurrido = 0;
+
+        $esperado = (int)$r['activos'] * (int)$r['raps_programa'];
+        if ($esperado <= 0) continue;
+
+        $pctCalendario = max(0, min(100, round($transcurrido / $duracion * 100, 1)));
+        $pctAvance     = round((int)$r['aprobados'] / $esperado * 100, 1);
+        $enProductiva  = $hoy > $finLectiva;
+
+        $out[] = [
+            'ficha'            => $r['ficha'],
+            'programa'         => $r['programa'],
+            'estado_ficha'     => $r['estado_ficha'],
+            'fecha_inicio'     => $r['fecha_inicio'],
+            'fecha_fin_ficha'  => $r['fecha_fin'],
+            'fecha_fin_lectiva'=> $finLectiva->format('Y-m-d'),
+            'activos'          => (int)$r['activos'],
+            'raps_programa'    => (int)$r['raps_programa'],
+            'aprobados'        => (int)$r['aprobados'],
+            'esperado'         => $esperado,
+            'pct_calendario'   => $pctCalendario,
+            'pct_avance'       => $pctAvance,
+            // Positivo = adelantada respecto a lo esperado; negativo = atrasada.
+            'desvio'           => round($pctAvance - $pctCalendario, 1),
+            // Días hasta el cierre de la LECTIVA (0 si ya está en productiva)
+            'dias_restantes'   => $enProductiva ? 0 : (int)$hoy->diff($finLectiva)->days,
+            'en_productiva'    => $enProductiva,
+            'dias_fin_ficha'   => $hoy > $finFicha ? 0 : (int)$hoy->diff($finFicha)->days,
+        ];
+    }
+    echo json_encode($out);
+    break;
+
+  // ================================================================
+  // MAPA DE CALOR — adaptativo
+  //   Con ficha seleccionada  -> Aprendiz x Competencia (vista de aula)
+  //   Sin ficha seleccionada  -> Ficha x Competencia    (vista institucional)
+  // Las columnas rojas señalan la competencia, no al aprendiz.
+  // ================================================================
+  case 'heatmap':
+    $porAprendiz = $g_ficha !== '';
+
+    if ($porAprendiz) {
+        $sql = "
+          SELECT a.documento                       AS fila_id,
+                 CONCAT(a.nombre, ' ', a.apellidos) AS fila,
+                 c.id_competencia,
+                 c.codigo                          AS cod_comp,
+                 c.nombre                          AS competencia,
+                 COUNT(DISTINCT r.id_resultado)    AS total,
+                 COUNT(DISTINCT CASE WHEN j.estado = 'Aprobado' THEN r.id_resultado END) AS aprobados
+          FROM Aprendiz a
+          JOIN formacion f                  ON f.ficha          = a.ficha
+          JOIN programa_competencia pc      ON pc.id_programa   = f.id_programa
+          JOIN Competencias c               ON c.id_competencia = pc.id_competencia
+          JOIN Resultados_aprendizaje r     ON r.id_competencia = c.id_competencia
+          LEFT JOIN juicios_evaluativos j   ON j.documento_aprendiz = a.documento
+                                           AND j.id_resultado       = r.id_resultado
+          WHERE $whereFichaStr AND " . sqlAprendizActivo() . "
+            AND " . sqlEsCompetenciaLectiva() . "
+          GROUP BY a.documento, fila, c.id_competencia, c.codigo, c.nombre
+          ORDER BY a.apellidos, a.nombre, c.codigo
+        ";
+    } else {
+        $sql = "
+          SELECT f.ficha                        AS fila_id,
+                 f.ficha                        AS fila,
+                 c.id_competencia,
+                 c.codigo                       AS cod_comp,
+                 c.nombre                       AS competencia,
+                 COUNT(DISTINCT CONCAT(a.documento, '-', r.id_resultado)) AS total,
+                 COUNT(DISTINCT CASE WHEN j.estado = 'Aprobado'
+                                     THEN CONCAT(a.documento, '-', r.id_resultado) END) AS aprobados
+          FROM formacion f
+          JOIN programa_competencia pc      ON pc.id_programa   = f.id_programa
+          JOIN Competencias c               ON c.id_competencia = pc.id_competencia
+          JOIN Resultados_aprendizaje r     ON r.id_competencia = c.id_competencia
+          JOIN Aprendiz a                   ON a.ficha = f.ficha AND " . sqlAprendizActivo() . "
+          LEFT JOIN juicios_evaluativos j   ON j.documento_aprendiz = a.documento
+                                           AND j.id_resultado       = r.id_resultado
+          WHERE $whereFichaStr AND " . sqlEsCompetenciaLectiva() . "
+          GROUP BY f.ficha, c.id_competencia, c.codigo, c.nombre
+          ORDER BY f.ficha, c.codigo
+        ";
+    }
+
+    $stmt = $db->prepare($sql);
+    $stmt->execute($paramsFicha);
+
+    $filas = []; $cols = []; $celdas = [];
+    foreach ($stmt->fetchAll() as $r) {
+        $filas[$r['fila_id']] = $r['fila'];
+        $cols[$r['id_competencia']] = ['codigo' => $r['cod_comp'], 'nombre' => $r['competencia']];
+        $celdas[] = [
+            'fila'      => $r['fila_id'],
+            'col'       => (int)$r['id_competencia'],
+            'total'     => (int)$r['total'],
+            'aprobados' => (int)$r['aprobados'],
+            'pct'       => (int)$r['total'] > 0 ? round((int)$r['aprobados'] / (int)$r['total'] * 100) : 0,
+        ];
+    }
+
+    echo json_encode([
+        'modo'    => $porAprendiz ? 'aprendiz' : 'ficha',
+        'filas'   => array_map(fn($id, $n) => ['id' => (string)$id, 'nombre' => $n], array_keys($filas), $filas),
+        'columnas'=> array_map(fn($id, $c) => ['id' => (int)$id] + $c, array_keys($cols), $cols),
+        'celdas'  => $celdas,
+    ]);
+    break;
+
+  // ================================================================
+  // RAPs ATASCADOS — los que más se quedan sin evaluar
+  // En esta base no existe 'No Aprobado': el cuello de botella real
+  // no es reprobar, es no llegar a calificar.
+  // ================================================================
+  case 'raps_atascados':
+    // Se agrupa por FICHA + RAP, nunca sólo por RAP: cada ficha tiene su
+    // propio cronograma, así que mezclarlas haría pasar por "incompleto" un
+    // RAP que una cohorte de 2023 ya cerró y otra de 2025 aún no ha visto.
+    // La agregación va en subconsulta porque MySQL no admite un alias de
+    // función de grupo dentro de una expresión del ORDER BY.
+    // El resultado se agrupa por FICHA + COMPETENCIA, no por RAP suelto.
+    // Un instructor califica la competencia entera de una sentada, así que
+    // todos sus RAPs quedan con cifras idénticas: listarlos uno por uno
+    // repetía el mismo hecho cuatro veces con códigos ilegibles.
+    $stmt = $db->prepare("
+      SELECT ficha,
+             programa,
+             competencia,
+             cod_comp,
+             COUNT(*)                  AS raps,          -- RAPs a medio calificar
+             MAX(total)                AS aprendices,    -- tamaño del grupo activo
+             MIN(aprobados)            AS aprob_min,
+             MAX(aprobados)            AS aprob_max,
+             SUM(total - aprobados)    AS faltantes      -- juicios por registrar
+      FROM (
+        SELECT f.ficha,
+               p.nombre                        AS programa,
+               c.nombre                        AS competencia,
+               c.codigo                        AS cod_comp,
+               r.id_resultado,
+               COUNT(DISTINCT a.documento)     AS total,
+               COUNT(DISTINCT CASE WHEN j.estado = 'Aprobado' THEN a.documento END) AS aprobados
+        FROM formacion f
+        JOIN Programa p                 ON p.id_programa    = f.id_programa
+        JOIN programa_competencia pc    ON pc.id_programa   = f.id_programa
+        JOIN Competencias c             ON c.id_competencia = pc.id_competencia
+        JOIN Resultados_aprendizaje r   ON r.id_competencia = c.id_competencia
+        JOIN Aprendiz a                 ON a.ficha = f.ficha AND " . sqlAprendizActivo() . "
+        LEFT JOIN juicios_evaluativos j ON j.documento_aprendiz = a.documento
+                                       AND j.id_resultado       = r.id_resultado
+        WHERE $whereFichaStr AND " . sqlEsCompetenciaLectiva() . "
+        GROUP BY f.ficha, p.nombre, c.nombre, c.codigo, r.id_resultado
+        -- Sólo calificaciones INCOMPLETAS dentro de una misma ficha: con
+        -- aprobados = 0 el RAP no se ha empezado (normal si va más adelante
+        -- en el cronograma) y con aprobados = total ya está cerrado. El caso
+        -- accionable es el de en medio: se calificó a parte del grupo.
+        HAVING total >= 5 AND aprobados > 0 AND aprobados < total
+      ) AS agg
+      GROUP BY ficha, programa, competencia, cod_comp
+      ORDER BY faltantes DESC
+    ");
+    $stmt->execute($paramsFicha);
+
+    // La respuesta va agrupada POR FICHA. Sin agrupar, la lista mezclaba
+    // competencias de programas distintos y no se entendía de qué grupo
+    // hablaba cada fila.
+    $porFicha = [];
+    foreach ($stmt->fetchAll() as $r) {
+        $ficha = $r['ficha'];
+        $porFicha[$ficha] ??= [
+            'ficha'     => $ficha,
+            'programa'  => $r['programa'],
+            'faltantes' => 0,
+            'items'     => [],
+        ];
+
+        $aprendices = (int)$r['aprendices'];
+        $aprobMin   = (int)$r['aprob_min'];
+        $aprobMax   = (int)$r['aprob_max'];
+
+        // Tope por ficha: la lista es un plan de trabajo, no un inventario
+        if (count($porFicha[$ficha]['items']) < 5) {
+            $porFicha[$ficha]['items'][] = [
+                'competencia' => $r['competencia'],
+                'cod_comp'    => $r['cod_comp'],
+                'raps'        => (int)$r['raps'],
+                'aprendices'  => $aprendices,
+                'aprob_min'   => $aprobMin,
+                'aprob_max'   => $aprobMax,
+                // Los RAPs de una competencia suelen calificarse a la vez; si
+                // no, se muestra el rango en vez de fingir precisión.
+                'uniforme'    => $aprobMin === $aprobMax,
+                'faltantes'   => (int)$r['faltantes'],
+                'pct_hecho'   => $aprendices > 0 ? round($aprobMin / $aprendices * 100) : 0,
+            ];
+        }
+        $porFicha[$ficha]['faltantes'] += (int)$r['faltantes'];
+    }
+
+    // Primero la ficha con más trabajo acumulado por registrar
+    $porFicha = array_values($porFicha);
+    usort($porFicha, fn($a, $b) => $b['faltantes'] <=> $a['faltantes']);
+    echo json_encode($porFicha);
     break;
 
   case 'get_filtros_globales':
