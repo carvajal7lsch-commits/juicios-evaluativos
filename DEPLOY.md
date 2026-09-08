@@ -114,6 +114,8 @@ Los scripts de `sql/` se montan en `/docker-entrypoint-initdb.d/` y se ejecutan
 1. `01-schema.sql` → crea la BD y las tablas
 2. `02-migracion.sql` → tabla `programa_resultado`
 3. `03-fecha-nullable.sql` → `fecha_registro` pasa a admitir NULL
+4. `04-proyecto-formativo.sql` → `fases_proyecto`, `actividades_proyecto`,
+   `actividad_resultado` y la columna `orden`
 
 En despliegues posteriores se ignoran y **los datos se conservan** (el volumen
 persiste). Ojo: `schema.sql` contiene `DROP TABLE IF EXISTS`, así que no lo
@@ -121,6 +123,26 @@ ejecutes a mano contra una base con datos reales.
 
 > `DB_NAME` debe seguir siendo `juicios_evaluativos`: los scripts SQL llevan
 > `USE juicios_evaluativos` escrito dentro.
+
+### Bases anteriores a septiembre de 2026
+
+Una versión previa de `schema.sql` borraba las tablas del proyecto formativo sin
+volver a crearlas, así que las bases inicializadas con ella dejan el módulo de
+fases caído:
+
+```
+SQLSTATE[42S02] 1146 Table 'juicios_evaluativos.fases_proyecto' doesn't exist
+```
+
+Como el volumen ya no está vacío, `04-proyecto-formativo.sql` **no** se ejecuta
+solo. La aplicación se repara sola en el primer acceso al módulo
+(`ensureProyectoSchema()` en `includes/proyecto.php`), pero eso exige que el
+usuario de base de datos pueda ejecutar DDL. Si no puede, aplícala a mano:
+
+```bash
+docker exec -i <contenedor_db> mariadb -u root -p<DB_ROOT_PASS> \
+  juicios_evaluativos < sql/migracion_proyecto_formativo.sql
+```
 
 ### Cambios de esquema posteriores
 

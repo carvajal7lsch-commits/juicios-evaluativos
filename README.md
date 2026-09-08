@@ -34,7 +34,7 @@ La base de datos se crea e inicializa sola con los scripts de `sql/`.
 1. Clonar el repositorio dentro de `htdocs`.
 2. Copiar `config/config.env.example.php` a `config/config.env.php`.
 3. Configurar los parámetros de conexión en `config/config.env.php`.
-4. Importar `sql/schema.sql` y luego `sql/migracion_programa_resultado.sql`.
+4. Importar `sql/schema.sql` y luego las migraciones de `sql/`.
 5. Abrir el proyecto en el navegador.
 
 ## Despliegue en producción

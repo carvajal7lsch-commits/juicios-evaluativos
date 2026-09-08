@@ -275,7 +275,7 @@ require_once ROOT_PATH . '/includes/header.php';
 <script>
 const API = '../api/proyecto.php';
 let currentProgram = '', currentActividad = '';
-let allFases = [], allRaps = [];
+let allFases = [], allRaps = [], allProgramas = [];
 let currentRapFilter = 'all';
 let isEditMode = false;
 let extractedProjectData = [], extractedProgramCode = null;
@@ -283,15 +283,56 @@ let extractedProjectData = [], extractedProgramCode = null;
 /* ================================================================
    CARGA DE PROGRAMAS Y FASES
    ================================================================ */
+/** Etiqueta de un programa en el desplegable, con lo que ya tiene cargado. */
+function opcionPrograma(p) {
+  const cola = p.fases > 0
+    ? `${p.fases} fase${p.fases === 1 ? '' : 's'} · ${p.actividades} actividad${p.actividades === 1 ? '' : 'es'}`
+    : 'sin proyecto cargado';
+  return `<option value="${esc(p.id_programa)}">${esc(p.codigo)} — ${esc(p.nombre)} · ${esc(cola)}</option>`;
+}
+
+/**
+ * Qué programa abrir al entrar.
+ *
+ * Aterrizar en una tarjeta que sólo dice "selecciona un programa" obliga a
+ * dar un clic antes de ver nada, y sin saber cuál de los cinco tiene el
+ * proyecto cargado. Se prioriza lo que pide la URL, luego lo último que
+ * abrió este usuario, y si no, el primer programa que ya tenga fases.
+ */
+function programaPreferido() {
+  const existe = v => allProgramas.some(p => String(p.id_programa) === v);
+  const conFases = v => allProgramas.some(p => String(p.id_programa) === v && p.fases > 0);
+
+  const pedido = new URLSearchParams(location.search).get('programa');
+  if (pedido && existe(pedido)) return pedido;
+
+  const ultimo = recordado('fases-programa');
+  if (conFases(ultimo)) return ultimo;
+
+  return String((allProgramas.find(p => p.fases > 0) ?? allProgramas[0])?.id_programa ?? '');
+}
+
 async function init() {
   const sel = document.getElementById('sel-programa');
   try {
-    const progs = await fetch(API + '?action=programas').then(r => r.json());
-    sel.innerHTML = '<option value="">Selecciona un programa…</option>' +
-      progs.map(p => `<option value="${esc(p.id_programa)}">${esc(p.codigo)} — ${esc(p.nombre)}</option>`).join('');
+    allProgramas = await fetch(API + '?action=programas').then(r => r.json());
   } catch (e) {
     sel.innerHTML = '<option value="">No se pudieron cargar los programas</option>';
     showToast('Error al cargar los programas.', 'danger');
+    return;
+  }
+
+  const cargados   = allProgramas.filter(p => p.fases > 0);
+  const pendientes = allProgramas.filter(p => p.fases === 0);
+
+  sel.innerHTML = '<option value="">Selecciona un programa…</option>'
+    + (cargados.length ? `<optgroup label="Con proyecto formativo">${cargados.map(opcionPrograma).join('')}</optgroup>` : '')
+    + (pendientes.length ? `<optgroup label="Sin proyecto cargado">${pendientes.map(opcionPrograma).join('')}</optgroup>` : '');
+
+  const inicial = programaPreferido();
+  if (inicial) {
+    sel.value = inicial;
+    loadFases();
   }
 }
 
@@ -309,6 +350,12 @@ async function loadFases() {
 
   document.getElementById('state-idle').hidden = true;
   document.getElementById('panel-fases').hidden = false;
+  recordar('fases-programa', currentProgram);
+
+  // Al cambiar de programa la actividad abierta ya no pertenece a lo que se
+  // está viendo: se suelta para que renderFases() abra la primera de la nueva.
+  currentActividad = '';
+  document.getElementById('panel-asignacion').dataset.locked = 'true';
 
   try {
     allFases = await fetch(`${API}?action=fases&id_programa=${encodeURIComponent(currentProgram)}`).then(r => r.json());
@@ -360,6 +407,14 @@ async function renderFases() {
   }));
 
   container.innerHTML = bloques.join('');
+
+  // El panel de RAPs arrancaba bloqueado hasta que se hiciera clic en una
+  // actividad, así que media pantalla quedaba en gris al entrar. Se abre la
+  // primera; se dispara el propio onclick para no duplicar el escapado del
+  // nombre que ya hace la plantilla del botón.
+  if (!currentActividad) {
+    container.querySelector('.act-item')?.click();
+  }
 }
 
 /* ================================================================

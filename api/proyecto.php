@@ -1,25 +1,50 @@
 <?php
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/proyecto.php';
 
 $action = $_GET['action'] ?? '';
 $db = getDB();
 
+// Hubo bases creadas con un schema.sql que borraba las tablas del proyecto
+// formativo sin volver a crearlas; ensureProyectoSchema() las levanta sola
+// en el primer acceso en vez de dejar el modulo caido con un error 1146.
+if (!ensureProyectoSchema($db)) {
+    jsonResponse(['error' => 'La estructura del proyecto formativo no esta disponible en la base de datos. Revisa el log del servidor.'], 500);
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    // Con el recuento de fases y actividades la página puede abrir sola un
+    // programa que tenga algo que enseñar, en vez de esperar a que el usuario
+    // adivine cuál de los cinco tiene el proyecto cargado.
     if ($action === 'programas') {
-        $stmt = $db->query('SELECT * FROM Programa ORDER BY nombre');
-        jsonResponse($stmt->fetchAll());
+        $sql = 'SELECT p.*,
+                       (SELECT COUNT(*) FROM fases_proyecto fp
+                        WHERE fp.id_programa = p.id_programa) AS fases,
+                       (SELECT COUNT(*) FROM actividades_proyecto ap
+                        JOIN fases_proyecto fp2 ON fp2.id_fase = ap.id_fase
+                        WHERE fp2.id_programa = p.id_programa) AS actividades
+                FROM Programa p
+                ORDER BY p.nombre';
+
+        $programas = [];
+        foreach ($db->query($sql)->fetchAll() as $p) {
+            $p['fases']       = (int) $p['fases'];
+            $p['actividades'] = (int) $p['actividades'];
+            $programas[] = $p;
+        }
+        jsonResponse($programas);
     }
     
     if ($action === 'fases') {
         $id_prog = $_GET['id_programa'] ?? 0;
-        $stmt = $db->prepare('SELECT * FROM fases_proyecto WHERE id_programa = ? ORDER BY id_fase');
+        $stmt = $db->prepare('SELECT * FROM fases_proyecto WHERE id_programa = ? ORDER BY ' . sqlOrdenFases());
         $stmt->execute([$id_prog]);
         jsonResponse($stmt->fetchAll());
     }
     
     if ($action === 'actividades') {
         $id_fase = $_GET['id_fase'] ?? 0;
-        $stmt = $db->prepare('SELECT * FROM actividades_proyecto WHERE id_fase = ? ORDER BY id_actividad');
+        $stmt = $db->prepare('SELECT * FROM actividades_proyecto WHERE id_fase = ? ORDER BY IF(orden = 0, 65535, orden), id_actividad');
         $stmt->execute([$id_fase]);
         jsonResponse($stmt->fetchAll());
     }
@@ -45,8 +70,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $body = json_decode(file_get_contents('php://input'), true);
     
     if ($action === 'crear_fase') {
-        $stmt = $db->prepare('INSERT INTO fases_proyecto (id_programa, nombre_fase, descripcion) VALUES (?, ?, ?)');
-        $stmt->execute([$body['id_programa'], $body['nombre_fase'], $body['descripcion'] ?? '']);
+        $stmt = $db->prepare('INSERT INTO fases_proyecto (id_programa, nombre_fase, descripcion, orden) VALUES (?, ?, ?, ?)');
+        $stmt->execute([$body['id_programa'], $body['nombre_fase'], $body['descripcion'] ?? '', ordenFaseSena($body['nombre_fase'])]);
         jsonResponse(['success' => true, 'id' => $db->lastInsertId()]);
     }
     
@@ -97,14 +122,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmtFase->execute([$id_programa, $nombreFaseNorm, "%$nombreFaseNorm%"]);
                 $id_fase = $stmtFase->fetchColumn();
 
+                // El PDF no siempre lista las fases en secuencia pedagogica,
+                // asi que el orden se deduce del nombre y no de la lectura.
+                $ordenFase = ordenFaseSena($nombreFaseNorm);
+
                 if (!$id_fase) {
-                    $stmtInsFase = $db->prepare('INSERT INTO fases_proyecto (id_programa, nombre_fase, descripcion) VALUES (?, ?, ?)');
-                    $stmtInsFase->execute([$id_programa, $nombreFaseNorm, 'Importado automáticamente del PDF']);
+                    $stmtInsFase = $db->prepare('INSERT INTO fases_proyecto (id_programa, nombre_fase, descripcion, orden) VALUES (?, ?, ?, ?)');
+                    $stmtInsFase->execute([$id_programa, $nombreFaseNorm, 'Importado automáticamente del PDF', $ordenFase]);
                     $id_fase = $db->lastInsertId();
+                } elseif ($ordenFase > 0) {
+                    // Fases importadas antes de que existiera la columna `orden`.
+                    $db->prepare('UPDATE fases_proyecto SET orden = ? WHERE id_fase = ? AND orden = 0')
+                       ->execute([$ordenFase, $id_fase]);
                 }
 
                 if (!empty($fase['actividades'])) {
+                    $ordenActividad = 0;
                     foreach ($fase['actividades'] as $act) {
+                        $ordenActividad++;
                         // Buscar Actividad ignorando prefijos de numeración
                         $nombreAct = trim($act['nombre']);
                         // Extraer el núcleo del nombre si tiene "Actividad número X: "
@@ -115,12 +150,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $id_act = $stmtAct->fetchColumn();
 
                         if (!$id_act) {
-                            $stmtInsAct = $db->prepare('INSERT INTO actividades_proyecto (id_fase, nombre_actividad, descripcion) VALUES (?, ?, ?)');
-                            $stmtInsAct->execute([$id_fase, $nombreAct, 'Importada del PDF']);
+                            $stmtInsAct = $db->prepare('INSERT INTO actividades_proyecto (id_fase, nombre_actividad, descripcion, orden) VALUES (?, ?, ?, ?)');
+                            $stmtInsAct->execute([$id_fase, $nombreAct, 'Importada del PDF', $ordenActividad]);
                             $id_act = $db->lastInsertId();
                         } else {
                             // Si existe, actualizamos el nombre al más completo (el que tiene número)
-                            $db->prepare('UPDATE actividades_proyecto SET nombre_actividad = ? WHERE id_actividad = ?')->execute([$nombreAct, $id_act]);
+                            $db->prepare('UPDATE actividades_proyecto SET nombre_actividad = ?, orden = ? WHERE id_actividad = ?')
+                               ->execute([$nombreAct, $ordenActividad, $id_act]);
                         }
 
                         if (!empty($act['competencias'])) {
@@ -187,7 +223,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         } catch (Exception $e) {
             $db->rollBack();
-            jsonResponse(['error' => $e->getMessage()], 500);
+            error_log('proyecto: fallo al importar el PDF: ' . $e->getMessage());
+            jsonResponse(['error' => 'No se pudo guardar la estructura del proyecto. No se aplico ningun cambio.'], 500);
         }
     }
 
@@ -202,7 +239,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$id_programa]);
             jsonResponse(['success' => true]);
         } catch (Exception $e) {
-            jsonResponse(['error' => $e->getMessage()], 500);
+            error_log('proyecto: fallo al borrar la estructura: ' . $e->getMessage());
+            jsonResponse(['error' => 'No se pudo borrar la estructura del proyecto.'], 500);
         }
     }
 }

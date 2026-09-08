@@ -31,7 +31,7 @@ $navGroups = [
     ],
     'Proyecto Formativo' => [
         ['key' => 'fases',           'label' => 'Fases y Actividades',  'icon' => 'layers', 'url' => '/pages/fases.php'],
-        ['key' => 'fases_dashboard', 'label' => 'Dashboard de Fases',   'icon' => 'target', 'url' => '/pages/fases_dashboard.php'],
+        ['key' => 'fases_dashboard', 'label' => 'Avance por Fases',   'icon' => 'target', 'url' => '/pages/fases_dashboard.php'],
     ],
 ];
 
@@ -45,7 +45,7 @@ if (!isset($crumbs)) {
         'fichas'          => ['Fichas de Formación',    '/pages/fichas.php'],
         'aprendices'      => ['Seguimiento Aprendiz',   '/pages/aprendices.php'],
         'fases'           => ['Fases y Actividades',    '/pages/fases.php'],
-        'fases_dashboard' => ['Dashboard de Fases',     '/pages/fases_dashboard.php'],
+        'fases_dashboard' => ['Avance por Fases',     '/pages/fases_dashboard.php'],
     ];
 
     if ($selfFile === 'ficha_detalle.php') {
@@ -114,6 +114,22 @@ if (!isset($crumbs)) {
   /** Lee un token del design system: siempre el valor del tema activo. */
   function token(name) {
     return getComputedStyle(document.documentElement).getPropertyValue('--' + name).trim();
+  }
+
+  /* ── Preferencias recordadas ──
+     Guardar el último filtro elegido evita que cada visita empiece en un
+     panel vacío. localStorage revienta en modo privado y con las cookies
+     de sitio bloqueadas, así que ninguna de las dos puede lanzar: la página
+     debe seguir funcionando sin memoria. */
+
+  /** Última elección guardada para `clave`, o '' si no hay ninguna. */
+  function recordado(clave) {
+    try { return localStorage.getItem('pref-' + clave) || ''; } catch (e) { return ''; }
+  }
+
+  /** Guarda la elección actual para `clave`. */
+  function recordar(clave, valor) {
+    try { localStorage.setItem('pref-' + clave, valor); } catch (e) {}
   }
 
   /* ── Estados de aprendiz (espejo de includes/estados.php) ──
