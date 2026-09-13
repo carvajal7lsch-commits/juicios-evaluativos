@@ -10,7 +10,7 @@ $pageActions = '
   <button class="btn btn-outline btn-sm" onclick="refreshDashboard()" title="Actualizar datos">'
     . icon('refresh') . '<span class="sr-only">Actualizar</span></button>
   <button class="btn btn-primary" onclick="openModal(\'modal-sofia\')">'
-    . icon('upload-cloud') . ' Importar Sofia Plus</button>';
+    . icon('upload-cloud') . ' Importar reportes Sofia</button>';
 
 require_once ROOT_PATH . '/includes/header.php';
 ?>
@@ -195,22 +195,44 @@ require_once ROOT_PATH . '/includes/header.php';
   <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="sofia-title">
     <div class="modal-header">
       <div>
-        <div class="modal-title" id="sofia-title"><?= icon('upload-cloud') ?> Importar Reporte Sofia Plus</div>
-        <div class="modal-sub">Carga aprendices, juicios, competencias y resultados de forma automática</div>
+        <div class="modal-title" id="sofia-title"><?= icon('upload-cloud') ?> Importar reportes Sofia Plus</div>
+        <div class="modal-sub">Sube uno o varios reportes a la vez (uno por ficha): se cargan aprendices, juicios, competencias y resultados</div>
       </div>
       <button class="modal-close" onclick="closeModal('modal-sofia')" aria-label="Cerrar"><?= icon('x') ?></button>
     </div>
 
-    <div class="modal-body">
+    <div class="modal-body"
+         ondragover="event.preventDefault(); if (!sfImporting) this.classList.add('is-dragover')"
+         ondragleave="if (!this.contains(event.relatedTarget)) this.classList.remove('is-dragover')"
+         ondrop="event.preventDefault(); this.classList.remove('is-dragover'); document.getElementById('sf-dropzone').classList.remove('dragover'); handleSofiaFiles(event.dataTransfer.files)">
+      <input type="file" id="sf-file" accept=".xlsx,.xls,.csv" multiple hidden onchange="handleSofiaFiles(this.files)" />
+
       <div class="dropzone" id="sf-dropzone"
            onclick="document.getElementById('sf-file').click()"
-           ondragover="event.preventDefault(); this.classList.add('dragover')"
-           ondragleave="this.classList.remove('dragover')"
-           ondrop="event.preventDefault(); this.classList.remove('dragover'); handleSofiaFile(event.dataTransfer.files[0])">
-        <input type="file" id="sf-file" accept=".xlsx,.xls,.csv" hidden onchange="handleSofiaFile(this.files[0])" />
+           ondragover="this.classList.add('dragover')"
+           ondragleave="this.classList.remove('dragover')">
+        <span class="badge badge-info dropzone-badge"><?= icon('layers') ?> Admite varios archivos a la vez</span>
         <div class="dropzone-icon"><?= icon('upload-cloud') ?></div>
-        <div class="dropzone-title">Arrastra aquí el reporte de Sofia Plus</div>
-        <div class="dropzone-sub">o haz clic para seleccionarlo — .xlsx / .xls / .csv</div>
+        <div class="dropzone-title">Arrastra aquí los reportes de Sofia Plus</div>
+        <div class="dropzone-sub">Suelta todos los que quieras juntos — .xlsx / .xls / .csv. Si un Excel tiene varias hojas, cada hoja se importa como un reporte</div>
+        <span class="btn btn-outline btn-sm dropzone-pick"><?= icon('folder-open') ?> Seleccionar archivos</span>
+        <div class="dropzone-tip">En la ventana de selección mantén <kbd>Ctrl</kbd> para marcar varios, o <kbd>Ctrl</kbd> + <kbd>A</kbd> para todos</div>
+      </div>
+
+      <!-- Carga de varios reportes: una fila por archivo, se importan en cola -->
+      <div id="sf-batch" hidden>
+        <div class="section-head">
+          <div>
+            <div class="section-title"><?= icon('clipboard-list') ?> Reportes a importar</div>
+            <div class="section-sub" id="sf-batch-sub"></div>
+          </div>
+        </div>
+        <div class="table-wrap" style="max-height:360px">
+          <table class="table table-compact" style="font-size:12.5px">
+            <thead><tr><th>Archivo / hoja</th><th>Ficha</th><th>Programa</th><th>Aprendices</th><th>Juicios</th><th>Estado</th><th class="col-actions"></th></tr></thead>
+            <tbody id="sf-batch-body"></tbody>
+          </table>
+        </div>
       </div>
 
       <div id="sf-preview" hidden>
@@ -252,7 +274,9 @@ require_once ROOT_PATH . '/includes/header.php';
     </div>
 
     <div class="modal-footer" id="sf-footer" hidden>
-      <button class="btn btn-outline" onclick="cancelSofiaImport()"><?= icon('x') ?> Cancelar</button>
+      <button class="btn btn-outline" id="btn-sf-add" style="margin-right:auto" onclick="document.getElementById('sf-file').click()"
+              title="También puedes arrastrar más archivos sobre esta ventana"><?= icon('plus') ?> Agregar más reportes</button>
+      <button class="btn btn-outline" id="btn-sf-cancel" onclick="cancelSofiaImport()"><?= icon('x') ?> Cancelar</button>
       <button class="btn btn-success" id="btn-sf-import" onclick="doSofiaImport()"><?= icon('upload-cloud') ?> Importar todo al sistema</button>
     </div>
   </div>
@@ -783,23 +807,126 @@ function renderTabla() {
 /* ================================================================
    IMPORTADOR SOFIA PLUS
    ================================================================ */
-let sfParsedMeta = {};
-let sfParsedRows = [];
+// Un elemento por reporte: cada hoja de un Excel con formato de Sofia Plus es
+// un reporte independiente (normalmente una ficha por hoja).
+// status: invalid (no se puede importar) · pending · importing · done · failed
+let sfQueue = [];
+let sfImporting = false, sfReading = false;
 
-function handleSofiaFile(file) {
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const wb = XLSX.read(e.target.result, { type: 'binary', cellDates: true });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      parseSofiaReport(XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', blankrows: true }));
-    } catch (err) {
-      showToast('No se pudo leer el archivo. ¿Es un Excel válido?', 'danger');
+const sfFileKey = f => `${f.name}|${f.size}|${f.lastModified}`;
+
+// Los archivos nuevos se suman a la lista; si no hay lista, arranca una
+async function handleSofiaFiles(fileList) {
+  const input = document.getElementById('sf-file');
+  const all   = Array.from(fileList || []);
+  input.value = ''; // permite volver a elegir el mismo archivo
+  if (!all.length || sfImporting) return;
+  if (sfReading) return showToast('Espera a que terminen de leerse los archivos anteriores.', 'info');
+
+  const yaEstan = new Set(sfQueue.map(it => it.fileKey));
+  const files   = all.filter(f => !yaEstan.has(sfFileKey(f)));
+  if (files.length < all.length) {
+    const n = all.length - files.length;
+    showToast(n === 1 ? 'Ese archivo ya estaba en la lista.' : `${n} archivos ya estaban en la lista.`, 'info');
+  }
+  if (!files.length) return;
+
+  const res = document.getElementById('sf-result');
+  res.innerHTML = '';
+  sfReading = true;
+  const omitidas = [];
+  // Se leen en serie para no cargar todos los Excel en memoria a la vez
+  for (const [i, file] of files.entries()) {
+    if (files.length > 1) {
+      res.innerHTML = `<div class="alert alert-info"><span class="spinner spinner-sm"></span><div>Leyendo archivo ${i + 1} de ${files.length}…</div></div>`;
     }
-  };
-  reader.readAsBinaryString(file);
+    const leido = await readSofiaFile(file);
+    sfQueue.push(...leido.items);
+    omitidas.push(...leido.omitidas.map(h => `"${h}" (${file.name})`));
+  }
+  sfReading = false;
+  res.innerHTML = '';
+
+  // Las hojas que no son reportes no se importan, pero se dice cuáles fueron
+  if (omitidas.length) {
+    showToast(`Se omitieron ${omitidas.length === 1 ? 'una hoja que no es' : omitidas.length + ' hojas que no son'} reporte de Sofia Plus: ${omitidas.slice(0, 4).join(', ')}${omitidas.length > 4 ? '…' : ''}`, 'warning', 8000);
+  }
+
+  if (sfQueue.length === 1) {
+    const item = sfQueue[0];
+    if (!item.rows) {
+      showToast(item.error, 'danger', 7000);
+      cancelSofiaImport();
+      return;
+    }
+    showSofiaPreview(item);
+  } else {
+    showSofiaBatch();
+  }
 }
+
+/**
+ * Lee todas las hojas de un archivo.
+ * items: un reporte por hoja con formato de Sofia Plus.
+ * omitidas: hojas con contenido que no son reportes (notas, resúmenes…).
+ * Las hojas vacías se ignoran sin avisar.
+ */
+function readSofiaFile(file) {
+  return new Promise(resolve => {
+    const fileKey = sfFileKey(file);
+    const fail = msg => resolve({
+      items: [{ key: fileKey, fileKey, fileName: file.name, sheet: null, meta: {}, rows: null, status: 'invalid', error: msg }],
+      omitidas: [],
+    });
+    const reader = new FileReader();
+    reader.onerror = () => fail('No se pudo leer el archivo.');
+    reader.onload = e => {
+      let wb;
+      try {
+        wb = XLSX.read(e.target.result, { type: 'binary', cellDates: true });
+      } catch (err) {
+        return fail('No se pudo leer el archivo. ¿Es un Excel válido?');
+      }
+
+      const varias   = wb.SheetNames.length > 1;
+      const items    = [];
+      const noSon    = []; // { hoja, error }
+
+      wb.SheetNames.forEach(hoja => {
+        let allRows, parsed;
+        try {
+          allRows = XLSX.utils.sheet_to_json(wb.Sheets[hoja], { header: 1, defval: '', blankrows: true });
+        } catch (err) {
+          noSon.push({ hoja, error: 'No se pudo leer la hoja.' });
+          return;
+        }
+        if (!allRows.some(r => r.some(c => String(c).trim() !== ''))) return; // hoja vacía
+
+        parsed = parseSofiaReport(allRows);
+        if (!parsed.rows) { noSon.push({ hoja, error: parsed.error }); return; }
+
+        const item = {
+          key: `${fileKey}|${hoja}`, fileKey, fileName: file.name, sheet: varias ? hoja : null,
+          meta: parsed.meta, rows: parsed.rows, status: 'pending', error: null,
+        };
+        if (parsed.error)             { item.status = 'invalid'; item.error = parsed.error; }
+        else if (!parsed.meta.ficha)  { item.status = 'invalid'; item.error = 'No se detectó la ficha en el encabezado.'; }
+        else if (!parsed.rows.length) { item.status = 'invalid'; item.error = 'El reporte no tiene filas de aprendices.'; }
+        items.push(item);
+      });
+
+      if (!items.length) {
+        if (!noSon.length) return fail('El archivo está vacío.');
+        return fail(noSon.length === 1 ? noSon[0].error : 'Ninguna hoja del archivo tiene formato de reporte de Sofia Plus.');
+      }
+      resolve({ items, omitidas: noSon.map(n => n.hoja) });
+    };
+    reader.readAsBinaryString(file);
+  });
+}
+
+/** Nombre visible de un reporte: el archivo, y la hoja si el libro tiene varias. */
+const sfNombre = it => it.sheet ? `${it.fileName} › ${it.sheet}` : it.fileName;
 
 function parseSofiaReport(allRows) {
   // ── 1. Buscar la fila de encabezados de datos ──
@@ -814,8 +941,7 @@ function parseSofiaReport(allRows) {
   }
 
   if (headerRowIdx === -1) {
-    showToast('No se pudo detectar la fila de encabezados. Verifica que sea el reporte correcto de Sofia Plus.', 'danger', 7000);
-    return;
+    return { error: 'No se pudo detectar la fila de encabezados. Verifica que sea el reporte correcto de Sofia Plus.' };
   }
 
   // ── 2. Extraer metadatos del encabezado ──
@@ -879,12 +1005,43 @@ function parseSofiaReport(allRows) {
     cols.nombre = colHeaders.findIndex(h => h === 'nombre' || (h.includes('nombre') && !h.includes('programa')));
   }
 
-  const dataRows = allRows.slice(headerRowIdx + 1).filter(r =>
+  const norm = c => String(c ?? '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/:/g, '');
+  const cuerpo = allRows.slice(headerRowIdx + 1);
+
+  // ── 4. Varias fichas en una misma hoja ──
+  // El encabezado solo admite una ficha, así que todos los aprendices de la
+  // hoja quedarían en ella. En lugar de importar mal, se marca la hoja.
+  let errorFichas = null;
+
+  // a) Reportes pegados uno debajo de otro: el encabezado de ficha o la fila de
+  //    títulos vuelve a aparecer. Esas filas se colarían como aprendices falsos.
+  const tituloDoc = cols.num_doc >= 0 ? colHeaders[cols.num_doc] : null;
+  const repetidos = cuerpo.filter(r =>
+    r.some(c => { const t = norm(c); return t.includes('ficha') && t.includes('caracterizacion'); }) ||
+    (tituloDoc && norm(r[cols.num_doc]) === tituloDoc)
+  ).length;
+  if (repetidos) {
+    errorFichas = 'La hoja trae varios reportes seguidos (varias fichas). Pon cada ficha en su propia hoja.';
+  }
+
+  // b) Una columna "Ficha" en las filas con más de un valor distinto
+  const colFicha = colHeaders.findIndex(h => h === 'ficha' || (/\bficha\b/.test(h) && !h.includes('estado')));
+  if (!errorFichas && colFicha >= 0) {
+    const fichas = [...new Set(cuerpo.map(r => String(r[colFicha] ?? '').trim()).filter(Boolean))];
+    if (fichas.length > 1) {
+      errorFichas = `La hoja mezcla ${fichas.length} fichas (${fichas.slice(0, 3).join(', ')}${fichas.length > 3 ? '…' : ''}). Pon cada ficha en su propia hoja.`;
+    } else if (fichas.length === 1 && !meta.ficha) {
+      meta.ficha = fichas[0];
+    } else if (fichas.length === 1 && meta.ficha && fichas[0] !== String(meta.ficha)) {
+      errorFichas = `El encabezado indica la ficha ${meta.ficha}, pero las filas son de la ficha ${fichas[0]}.`;
+    }
+  }
+
+  const dataRows = cuerpo.filter(r =>
     r.some(c => String(c).trim() !== '') && String(r[cols.num_doc] ?? '').trim() !== ''
   );
 
-  sfParsedMeta = meta;
-  sfParsedRows = dataRows.map(r => {
+  const rows = dataRows.map(r => {
     const get = idx => {
       if (idx < 0) return '';
       const val = r[idx];
@@ -908,11 +1065,11 @@ function parseSofiaReport(allRows) {
     };
   });
 
-  showSofiaPreview();
+  return { meta, rows, error: errorFichas };
 }
 
-function showSofiaPreview() {
-  const meta = sfParsedMeta, rows = sfParsedRows;
+function showSofiaPreview(item) {
+  const { meta, rows } = item;
 
   const fichaEl = document.getElementById('sf-ficha');
   fichaEl.textContent = meta.ficha || 'No detectada';
@@ -944,58 +1101,200 @@ function showSofiaPreview() {
             : '<span class="text-muted text-xs">—</span>'}</td>
     </tr>`).join('');
 
+  // Un reporte no importable (p. ej. fichas mezcladas) debe decirlo antes de pulsar Importar
+  document.getElementById('sf-result').innerHTML = item.status === 'invalid'
+    ? `<div class="alert alert-danger">${ic('x-circle')}<div><strong>Este reporte no se puede importar</strong><br>${esc(item.error)}</div></div>`
+    : '';
+
   document.getElementById('sf-preview').hidden  = false;
+  document.getElementById('sf-footer').hidden   = false;
+  document.getElementById('sf-dropzone').hidden = true;
+  updateSofiaFooter();
+}
+
+/* ── Varios reportes: tabla con el estado de cada archivo ── */
+function showSofiaBatch() {
+  // Si la misma ficha viene en dos archivos, el último en importarse gana
+  const vistas = {};
+  sfQueue.forEach(it => {
+    const f = it.meta.ficha;
+    it.duplicada = !!f && it.rows !== null && (vistas[f] = (vistas[f] || 0) + 1) > 1;
+  });
+
+  renderSofiaBatch();
+  document.getElementById('sf-preview').hidden  = true;
+  document.getElementById('sf-batch').hidden    = false;
   document.getElementById('sf-footer').hidden   = false;
   document.getElementById('sf-dropzone').hidden = true;
 }
 
-async function doSofiaImport() {
-  if (!sfParsedMeta.ficha) {
-    showToast('No se detectó la ficha en el encabezado. Verifica el archivo.', 'warning', 6000);
-    return;
-  }
-  const btn = document.getElementById('btn-sf-import');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner spinner-sm"></span> Importando…';
+function renderSofiaBatch() {
+  const cuenta = s => sfQueue.filter(it => it.status === s).length;
+  const partes = [`${sfQueue.length} archivos`];
+  if (cuenta('invalid')) partes.push(`${cuenta('invalid')} no válidos`);
+  if (cuenta('done'))    partes.push(`${cuenta('done')} importados`);
+  if (cuenta('failed'))  partes.push(`${cuenta('failed')} con error`);
+  document.getElementById('sf-batch-sub').textContent = partes.join(' · ');
 
-  const res = document.getElementById('sf-result');
+  document.getElementById('sf-batch-body').innerHTML = sfQueue.map((it, i) => {
+    const rows      = it.rows || [];
+    const nAprend   = new Set(rows.map(r => r.numero_documento).filter(Boolean)).size;
+    const nJuicios  = rows.filter(r => r.juicio_evaluacion).length;
+    const prog      = it.meta.nombre_programa || '—';
+
+    let estado;
+    switch (it.status) {
+      case 'invalid':   estado = `<span class="badge badge-danger" title="${esc(it.error)}">No válido</span><div class="text-xs text-danger">${esc(it.error)}</div>`; break;
+      case 'importing': estado = `<span class="badge badge-info"><span class="spinner spinner-sm"></span> Importando…</span>`; break;
+      case 'failed':    estado = `<span class="badge badge-danger">Error</span><div class="text-xs text-danger">${esc(it.error)}</div>`; break;
+      case 'done':      estado = `<span class="badge badge-success">Importado</span><div class="text-xs text-muted">${it.result.juicios.insertados} nuevos · ${it.result.juicios.actualizados} actualizados</div>`; break;
+      default:          estado = it.duplicada
+                          ? `<span class="badge badge-warning" title="Otra hoja o archivo trae la misma ficha; se aplicará el último">Ficha repetida</span>`
+                          : `<span class="badge badge-muted">En cola</span>`;
+    }
+
+    const quitar = !sfImporting && it.status !== 'done'
+      ? `<button class="btn btn-ghost btn-sm" onclick="removeSofiaItem(${i})" aria-label="Quitar ${esc(sfNombre(it))}">${ic('x')}</button>`
+      : '';
+
+    return `<tr>
+      <td style="max-width:180px" title="${esc(sfNombre(it))}">
+        <div class="truncate">${esc(it.fileName)}</div>
+        ${it.sheet ? `<div class="text-xs text-muted truncate">Hoja: ${esc(it.sheet)}</div>` : ''}
+      </td>
+      <td class="mono fw-600">${esc(it.meta.ficha || '—')}</td>
+      <td class="text-secondary truncate" style="max-width:180px" title="${esc(prog)}">${esc(prog)}</td>
+      <td class="mono">${it.rows ? nAprend : '—'}</td>
+      <td class="mono">${it.rows ? nJuicios : '—'}</td>
+      <td>${estado}</td>
+      <td class="col-actions">${quitar}</td>
+    </tr>`;
+  }).join('');
+
+  updateSofiaFooter();
+}
+
+function removeSofiaItem(i) {
+  if (sfImporting) return;
+  sfQueue.splice(i, 1);
+  if (!sfQueue.length) return cancelSofiaImport();
+  showSofiaBatch();
+}
+
+function updateSofiaFooter() {
+  const btn     = document.getElementById('btn-sf-import');
+  const cancel  = document.getElementById('btn-sf-cancel');
+  const pending = sfQueue.filter(it => it.status === 'pending').length;
+  const failed  = sfQueue.filter(it => it.status === 'failed').length;
+  const done    = sfQueue.some(it => it.status === 'done');
+  const batch   = sfQueue.length > 1;
+
+  cancel.disabled  = sfImporting;
+  document.getElementById('btn-sf-add').disabled = sfImporting;
+  cancel.innerHTML = done ? ic('refresh') + ' Nueva importación' : ic('x') + ' Cancelar';
+  if (sfImporting) return;
+
+  btn.disabled = false;
+  if (!batch) {
+    btn.hidden    = false;
+    btn.innerHTML = ic('upload-cloud') + ' Importar todo al sistema';
+  } else {
+    btn.hidden    = pending + failed === 0;
+    btn.innerHTML = ic('upload-cloud') + (pending
+      ? ` Importar ${pending + failed} ${pending + failed === 1 ? 'reporte' : 'reportes'}`
+      : ` Reintentar ${failed} con error`);
+  }
+}
+
+async function importSofiaItem(item) {
   try {
-    const r = await fetch('../api/importar_reporte.php', {
+    const resp = await fetch('../api/importar_reporte.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ficha_meta: sfParsedMeta, rows: sfParsedRows })
-    }).then(r => r.json());
+      body: JSON.stringify({ ficha_meta: item.meta, rows: item.rows })
+    });
+    // Un error fatal de PHP devuelve HTML en lugar de JSON
+    const r = await resp.json().catch(() => ({ error: `Respuesta inválida del servidor (HTTP ${resp.status})` }));
+    if (r.error) { item.status = 'failed'; item.error = r.error; }
+    else         { item.status = 'done';   item.result = r; item.error = null; }
+  } catch (e) {
+    item.status = 'failed';
+    item.error  = 'Error de red durante la importación.';
+  }
+}
 
-    if (r.error) {
-      res.innerHTML = `<div class="alert alert-danger">${ic('x-circle')}<div>Error: ${esc(r.error)}</div></div>`;
+async function doSofiaImport() {
+  const batch = sfQueue.length > 1;
+  const cola  = sfQueue.filter(it => it.status === 'pending' || it.status === 'failed');
+
+  if (!cola.length) {
+    const msg = batch ? 'No hay reportes válidos para importar.' : (sfQueue[0]?.error || 'Verifica el archivo.');
+    showToast(msg, 'warning', 6000);
+    return;
+  }
+
+  const btn = document.getElementById('btn-sf-import');
+  const res = document.getElementById('sf-result');
+  res.innerHTML = '';
+  sfImporting = true;
+  btn.disabled = true;
+
+  // En serie: cada reporte es una transacción y así no saturamos el servidor
+  for (const [i, item] of cola.entries()) {
+    btn.innerHTML = `<span class="spinner spinner-sm"></span> Importando${batch ? ` ${i + 1} de ${cola.length}` : ''}…`;
+    item.status = 'importing';
+    if (batch) renderSofiaBatch();
+    await importSofiaItem(item);
+    if (batch) renderSofiaBatch();
+  }
+
+  sfImporting = false;
+  const ok = cola.filter(it => it.status === 'done');
+
+  if (!batch) {
+    const item = cola[0], r = item.result;
+    if (item.status === 'failed') {
+      res.innerHTML = `<div class="alert alert-danger">${ic('x-circle')}<div>Error: ${esc(item.error)}</div></div>`;
+      updateSofiaFooter();
     } else {
       res.innerHTML = `<div class="alert alert-success">${ic('check-circle')}<div>
-          <strong>Importación completada</strong> — Ficha <strong>${esc(sfParsedMeta.ficha)}</strong><br>
+          <strong>Importación completada</strong> — Ficha <strong>${esc(item.meta.ficha)}</strong><br>
           Aprendices: ${r.aprendices.insertados} nuevos · ${r.aprendices.actualizados} actualizados<br>
           Competencias: ${r.competencias.insertadas} nuevas · ${r.competencias.ya_existian} ya existían<br>
           Resultados: ${r.resultados.insertados} nuevos<br>
           Juicios: ${r.juicios.insertados} insertados · ${r.juicios.actualizados} actualizados · ${r.juicios.sin_juicio} sin valor
           ${r.errores?.length ? '<br><strong>Avisos:</strong> ' + esc(r.errores.slice(0, 3).join(' | ')) : ''}
         </div></div>`;
-      cancelSofiaImport();
+      cancelSofiaImport(false);
       showToast('Reporte importado correctamente.', 'success');
-      await loadGlobalFiltersData();
-      await refreshDashboard();
     }
-  } catch (e) {
-    res.innerHTML = `<div class="alert alert-danger">${ic('x-circle')}<div>Error de red durante la importación.</div></div>`;
+  } else {
+    const suma = (fn) => ok.reduce((acc, it) => acc + fn(it.result), 0);
+    const fallidos = cola.length - ok.length;
+    res.innerHTML = `<div class="alert ${fallidos ? 'alert-warning' : 'alert-success'}">${ic(fallidos ? 'alert-triangle' : 'check-circle')}<div>
+        <strong>${ok.length} de ${cola.length} reportes importados</strong>${fallidos ? ` — ${fallidos} con error (puedes reintentarlos)` : ''}<br>
+        Aprendices: ${suma(r => r.aprendices.insertados)} nuevos · ${suma(r => r.aprendices.actualizados)} actualizados<br>
+        Juicios: ${suma(r => r.juicios.insertados)} insertados · ${suma(r => r.juicios.actualizados)} actualizados · ${suma(r => r.juicios.sin_juicio)} sin valor
+      </div></div>`;
+    renderSofiaBatch();
+    showToast(`${ok.length} de ${cola.length} reportes importados.`, fallidos ? 'warning' : 'success');
   }
 
-  btn.disabled = false;
-  btn.innerHTML = ic('upload-cloud') + ' Importar todo al sistema';
+  if (ok.length) {
+    await loadGlobalFiltersData();
+    await refreshDashboard();
+  }
 }
 
-function cancelSofiaImport() {
+function cancelSofiaImport(clearResult = true) {
+  if (sfImporting) return;
   document.getElementById('sf-preview').hidden  = true;
+  document.getElementById('sf-batch').hidden    = true;
   document.getElementById('sf-footer').hidden   = true;
   document.getElementById('sf-dropzone').hidden = false;
   document.getElementById('sf-file').value = '';
-  sfParsedMeta = {}; sfParsedRows = [];
+  if (clearResult) document.getElementById('sf-result').innerHTML = '';
+  sfQueue = [];
 }
 
 init();

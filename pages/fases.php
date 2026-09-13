@@ -9,7 +9,7 @@ $pageActions = '
   <button class="btn btn-danger-soft btn-sm" id="btn-borrar-estructura" onclick="borrarEstructura()" hidden>'
     . icon('trash') . ' Borrar estructura</button>
   <button class="btn btn-primary" onclick="openModal(\'modal-pdf-import\')">'
-    . icon('zap') . ' Importar PDF</button>';
+    . icon('zap') . ' Importar PDFs</button>';
 
 require_once ROOT_PATH . '/includes/header.php';
 ?>
@@ -31,8 +31,8 @@ require_once ROOT_PATH . '/includes/header.php';
   <div class="empty-state">
     <div class="empty-icon"><?= icon('layers') ?></div>
     <div class="empty-title">Selecciona un programa de formación</div>
-    <p>Podrás organizar sus fases y actividades, o importar el PDF del proyecto formativo para que el sistema detecte la estructura automáticamente.</p>
-    <button class="btn btn-primary" onclick="openModal('modal-pdf-import')"><?= icon('zap') ?> Importar PDF del proyecto</button>
+    <p>Podrás organizar sus fases y actividades, o importar los PDF de los proyectos formativos (uno o varios) para que el sistema detecte la estructura automáticamente.</p>
+    <button class="btn btn-primary" onclick="openModal('modal-pdf-import')"><?= icon('zap') ?> Importar PDFs de proyectos</button>
   </div>
 </div>
 
@@ -91,21 +91,64 @@ require_once ROOT_PATH . '/includes/header.php';
     <div class="modal-header">
       <div>
         <div class="modal-title" id="pdf-imp-title"><?= icon('zap') ?> Importación automática (PDF)</div>
-        <div class="modal-sub">El sistema detectará Programa, Fases, Actividades y RAPs</div>
+        <div class="modal-sub">Sube uno o varios proyectos formativos: el sistema detecta Programa, Fases, Actividades y RAPs</div>
       </div>
       <button class="modal-close" onclick="closeModal('modal-pdf-import')" aria-label="Cerrar"><?= icon('x') ?></button>
     </div>
     <div class="modal-body">
+      <!-- Un solo input para todos los modales: el de carga, la vista previa y la lista -->
+      <input type="file" id="pdf-file" accept=".pdf,application/pdf" multiple hidden onchange="handlePDFFiles(this.files)" />
       <div class="dropzone" id="pdf-dropzone" onclick="document.getElementById('pdf-file').click()">
-        <input type="file" id="pdf-file" accept=".pdf" hidden onchange="handlePDFFile(this.files[0])" />
+        <span class="badge badge-info dropzone-badge"><?= icon('layers') ?> Admite varios PDF a la vez</span>
         <div class="dropzone-icon"><?= icon('file-text') ?></div>
-        <div class="dropzone-title">Arrastra aquí el PDF del Proyecto Formativo</div>
-        <div class="dropzone-sub">No necesitas seleccionar el programa: el algoritmo lo detecta por ti</div>
+        <div class="dropzone-title">Arrastra aquí los PDF de los Proyectos Formativos</div>
+        <div class="dropzone-sub">Suelta todos los que quieras juntos. No necesitas elegir el programa: se detecta por el código del PDF</div>
+        <span class="btn btn-outline btn-sm dropzone-pick"><?= icon('folder-open') ?> Seleccionar archivos</span>
+        <div class="dropzone-tip">En la ventana de selección mantén <kbd>Ctrl</kbd> para marcar varios, o <kbd>Ctrl</kbd> + <kbd>A</kbd> para todos</div>
       </div>
       <div id="pdf-loader" class="text-center" style="margin-top:18px" hidden>
         <span class="spinner"></span>
-        <div class="text-sm fw-600 text-brand" style="margin-top:10px">Leyendo e interpretando el documento…</div>
+        <div class="text-sm fw-600 text-brand pdf-loader-text" style="margin-top:10px">Leyendo e interpretando el documento…</div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: varios PDF — una fila por proyecto, se importan en cola ══ -->
+<div class="modal-overlay" id="modal-pdf-batch">
+  <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="pdf-batch-title">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="pdf-batch-title"><?= icon('layers') ?> Proyectos formativos a importar</div>
+        <div class="modal-sub" id="pdf-batch-sub"></div>
+      </div>
+      <button class="modal-close" onclick="cancelPdfBatch()" aria-label="Cerrar"><?= icon('x') ?></button>
+    </div>
+
+    <div class="modal-body" id="pdf-batch-body">
+      <div class="alert alert-info mb-4">
+        <?= icon('info') ?>
+        <div>Revisa el <strong>programa</strong> de cada PDF: se preselecciona con el código que trae el documento.
+        Con <strong>Ver</strong> puedes revisar la estructura detectada antes de importar.</div>
+      </div>
+      <div class="table-wrap" style="max-height:52vh">
+        <table class="table table-compact" style="font-size:12.5px">
+          <thead><tr><th>Archivo</th><th style="min-width:230px">Programa</th><th>Estructura</th><th>Estado</th><th class="col-actions"></th></tr></thead>
+          <tbody id="pdf-batch-tbody"></tbody>
+        </table>
+      </div>
+      <div id="pdf-batch-loader" class="text-center" style="margin-top:14px" hidden>
+        <span class="spinner spinner-sm"></span>
+        <span class="text-sm fw-600 text-brand pdf-loader-text"></span>
+      </div>
+      <div id="pdf-batch-result" style="margin-top:16px"></div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-outline" id="btn-pdf-add" style="margin-right:auto" onclick="document.getElementById('pdf-file').click()"
+              title="También puedes arrastrar más PDF sobre esta ventana"><?= icon('plus') ?> Agregar más PDF</button>
+      <button class="btn btn-outline" id="btn-pdf-batch-cancel" onclick="cancelPdfBatch()">Cancelar</button>
+      <button class="btn btn-success" id="btn-pdf-batch-import" onclick="doPdfBatchImport()"><?= icon('upload-cloud') ?> Importar</button>
     </div>
   </div>
 </div>
@@ -136,9 +179,12 @@ require_once ROOT_PATH . '/includes/header.php';
     <div class="modal-body" id="pdf-preview-content"></div>
 
     <div class="modal-footer" style="justify-content:space-between">
-      <span class="text-xs text-muted flex-1">Las competencias y RAPs se vincularán al programa sin duplicar registros.</span>
+      <div class="cluster-sm flex-1">
+        <button class="btn btn-outline" id="btn-pdf-preview-add" onclick="document.getElementById('pdf-file').click()"><?= icon('plus') ?> Agregar más PDF</button>
+        <span class="text-xs text-muted">Las competencias y RAPs se vincularán al programa sin duplicar registros.</span>
+      </div>
       <div class="cluster-sm">
-        <button class="btn btn-outline" onclick="closePdfPreview()">Cancelar</button>
+        <button class="btn btn-outline" id="btn-pdf-preview-cancel" onclick="closePdfPreview()">Cancelar</button>
         <button class="btn btn-success" id="btn-save-pdf" onclick="savePdfImport()"><?= icon('save') ?> Importar proyecto</button>
       </div>
     </div>
@@ -278,7 +324,11 @@ let currentProgram = '', currentActividad = '';
 let allFases = [], allRaps = [], allProgramas = [];
 let currentRapFilter = 'all';
 let isEditMode = false;
-let extractedProjectData = [], extractedProgramCode = null;
+// Un elemento por PDF cargado.
+// status: invalid (sin estructura) · pending · importing · done · failed
+let pdfQueue = [];
+let pdfImporting = false, pdfReading = false;
+let pdfPreviewMode = 'single'; // 'batch' cuando la vista previa se abre desde la lista
 
 /* ================================================================
    CARGA DE PROGRAMAS Y FASES
@@ -312,14 +362,15 @@ function programaPreferido() {
   return String((allProgramas.find(p => p.fases > 0) ?? allProgramas[0])?.id_programa ?? '');
 }
 
-async function init() {
+/** Pide los programas y rehace el desplegable (los recuentos cambian al importar). */
+async function cargarProgramas() {
   const sel = document.getElementById('sel-programa');
   try {
     allProgramas = await fetch(API + '?action=programas').then(r => r.json());
   } catch (e) {
     sel.innerHTML = '<option value="">No se pudieron cargar los programas</option>';
     showToast('Error al cargar los programas.', 'danger');
-    return;
+    return false;
   }
 
   const cargados   = allProgramas.filter(p => p.fases > 0);
@@ -328,6 +379,20 @@ async function init() {
   sel.innerHTML = '<option value="">Selecciona un programa…</option>'
     + (cargados.length ? `<optgroup label="Con proyecto formativo">${cargados.map(opcionPrograma).join('')}</optgroup>` : '')
     + (pendientes.length ? `<optgroup label="Sin proyecto cargado">${pendientes.map(opcionPrograma).join('')}</optgroup>` : '');
+  return true;
+}
+
+/** Tras importar: refresca los recuentos y abre el programa indicado. */
+async function mostrarProgramaImportado(idPrograma) {
+  if (!await cargarProgramas()) return;
+  const sel = document.getElementById('sel-programa');
+  sel.value = String(idPrograma);
+  loadFases();
+}
+
+async function init() {
+  if (!await cargarProgramas()) return;
+  const sel = document.getElementById('sel-programa');
 
   const inicial = programaPreferido();
   if (inicial) {
@@ -518,35 +583,125 @@ async function toggleRap(id_resultado, asignar) {
 /* ================================================================
    EXTRACCIÓN DE PDF (PDF.js)
    ================================================================ */
-async function handlePDFFile(file) {
-  if (!file || file.type !== 'application/pdf') return showToast('Sube un archivo PDF válido.', 'warning');
+const pdfFileKey = f => `${f.name}|${f.size}|${f.lastModified}`;
+const esPdf      = f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
 
-  document.getElementById('pdf-loader').hidden = false;
+function programaPorCodigo(codigo) {
+  return codigo ? allProgramas.find(p => String(p.codigo).trim() === String(codigo)) : null;
+}
+function programaPorId(id) {
+  return allProgramas.find(p => String(p.id_programa) === String(id));
+}
 
-  const reader = new FileReader();
-  reader.onload = async function () {
-    try {
-      const pdf = await pdfjsLib.getDocument(new Uint8Array(this.result)).promise;
-      let fullText = '';
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        fullText += textContent.items.map(item => item.str).join(' ') + ' \n';
-      }
+/** Muestra (o quita) el aviso de lectura en el modal de carga y en la lista. */
+function setPdfProgress(texto) {
+  pdfReading = !!texto;
+  ['pdf-loader', 'pdf-batch-loader'].forEach(id => {
+    const el = document.getElementById(id);
+    el.hidden = !texto;
+    if (texto) el.querySelector('.pdf-loader-text').textContent = texto;
+  });
+  // Desde la vista previa de un solo PDF el aviso va en el propio botón
+  const add = document.getElementById('btn-pdf-preview-add');
+  add.disabled  = pdfReading;
+  add.innerHTML = pdfReading ? '<span class="spinner spinner-sm"></span> Leyendo…' : ic('plus') + ' Agregar más PDF';
+  document.getElementById('btn-pdf-add').disabled = pdfReading || pdfImporting;
+}
 
-      // Se guarda el texto crudo en el servidor para poder depurar la extracción
-      await fetch('../api/save_debug.php', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: fullText })
-      });
+// Los PDF nuevos se suman a la lista; si no hay lista, arranca una
+async function handlePDFFiles(fileList) {
+  const input = document.getElementById('pdf-file');
+  const all   = Array.from(fileList || []);
+  input.value = ''; // permite volver a elegir el mismo archivo
+  if (!all.length || pdfImporting) return;
+  if (pdfReading) return showToast('Espera a que terminen de leerse los PDF anteriores.', 'info');
 
-      parseProjectTextV2(fullText);
-    } catch (e) {
-      showToast('Error procesando el PDF: ' + e.message, 'danger', 6000);
-    } finally {
-      document.getElementById('pdf-loader').hidden = true;
+  const pdfs = all.filter(esPdf);
+  if (pdfs.length < all.length) {
+    const n = all.length - pdfs.length;
+    showToast(n === 1 ? 'Se ignoró un archivo que no es PDF.' : `Se ignoraron ${n} archivos que no son PDF.`, 'warning');
+  }
+
+  const yaEstan = new Set(pdfQueue.map(it => it.key));
+  const files   = pdfs.filter(f => !yaEstan.has(pdfFileKey(f)));
+  if (files.length < pdfs.length) {
+    const n = pdfs.length - files.length;
+    showToast(n === 1 ? 'Ese PDF ya estaba en la lista.' : `${n} PDF ya estaban en la lista.`, 'info');
+  }
+  if (!files.length) return;
+
+  // Si se agregan PDF desde la vista previa de uno solo, conservar el programa ya elegido ahí
+  const manual = document.getElementById('pdf-manual-prog');
+  if (pdfQueue.length === 1 && pdfPreviewMode === 'single' && manual && !pdfQueue[0].idPrograma) {
+    pdfQueue[0].idPrograma = manual.value;
+  }
+
+  // Se leen en serie: PDF.js con muchos documentos a la vez dispara la memoria
+  for (const [i, file] of files.entries()) {
+    setPdfProgress(files.length > 1
+      ? `Leyendo e interpretando documento ${i + 1} de ${files.length}…`
+      : 'Leyendo e interpretando el documento…');
+    pdfQueue.push(await extractPdf(file));
+  }
+  setPdfProgress(null);
+
+  if (pdfQueue.length === 1) {
+    const item = pdfQueue[0];
+    if (!item.data) {
+      showToast(item.error, 'danger', 6000);
+      pdfQueue = [];
+      return;
     }
-  };
-  reader.readAsArrayBuffer(file);
+    showPdfPreview(item, 'single');
+  } else {
+    closeModal('modal-pdf-import');
+    closeModal('modal-pdf-preview');
+    showPdfBatch();
+  }
+}
+
+async function extractPdf(file) {
+  const item = { key: pdfFileKey(file), name: file.name, data: null, code: null, idPrograma: '', counts: null, status: 'invalid', error: null };
+  try {
+    const pdf = await pdfjsLib.getDocument(new Uint8Array(await file.arrayBuffer())).promise;
+    let fullText = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      fullText += textContent.items.map(it => it.str).join(' ') + ' \n';
+    }
+    pdf.destroy();
+
+    // Se guarda el texto crudo en el servidor para poder depurar la extracción
+    fetch('../api/save_debug.php', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: fullText })
+    }).catch(() => {});
+
+    const { data, programCode } = parseProjectTextV2(fullText);
+    const prog = programaPorCodigo(programCode);
+    Object.assign(item, {
+      data, code: programCode, counts: contarEstructura(data),
+      idPrograma: prog ? String(prog.id_programa) : '',
+    });
+
+    if (!item.counts.fases || (!item.counts.acts && !item.counts.raps)) {
+      item.error = 'No se pudo extraer una estructura válida.';
+    } else {
+      item.status = 'pending';
+    }
+  } catch (e) {
+    item.error = 'Error procesando el PDF: ' + e.message;
+  }
+  return item;
+}
+
+function contarEstructura(data) {
+  let acts = 0, raps = 0;
+  data.forEach(f => (f.actividades || []).forEach(a => {
+    acts++;
+    (a.competencias || []).forEach(c => raps += (c.raps || []).length);
+  }));
+  return { fases: data.length, acts, raps };
 }
 
 function parseProjectTextV2(text) {
@@ -558,7 +713,7 @@ function parseProjectTextV2(text) {
 
   // Extraer código del programa ANTES de recortar el texto
   let progMatch = fullText.match(/(\d{5,10})\s+C[oó]digo\s+del\s+Programa\s+SOFIA/i);
-  extractedProgramCode = progMatch ? progMatch[1] : null;
+  const programCode = progMatch ? progMatch[1] : null;
 
   // Delimitar la búsqueda a la sección de estructura (secciones 3 a 3.5 aprox.)
   let startSection3 = n.search(/3\.\s*(?:Fases|Planeación)/i);
@@ -714,115 +869,308 @@ function parseProjectTextV2(text) {
     }
   }
 
-  extractedProjectData = data;
-  showPdfPreview();
+  return { data, programCode };
 }
 
-function showPdfPreview() {
-  let tFases = extractedProjectData.length, tActs = 0, tRaps = 0;
+/** Opciones de programa para los selectores de la importación. */
+function opcionesProgramas(seleccionado) {
+  return '<option value="">Elige el programa…</option>' + allProgramas.map(p =>
+    `<option value="${esc(p.id_programa)}" ${String(p.id_programa) === String(seleccionado) ? 'selected' : ''}>${esc(p.codigo)} — ${esc(p.nombre)}</option>`
+  ).join('');
+}
 
-  let html = extractedProgramCode
+/**
+ * Vista previa de la estructura de un PDF.
+ * mode 'single': un solo PDF, se importa desde aquí.
+ * mode 'batch' : consulta desde la lista; el programa se elige en la tabla.
+ */
+function showPdfPreview(item, mode) {
+  pdfPreviewMode = mode;
+  const batch   = mode === 'batch';
+  const detect  = programaPorCodigo(item.code);
+  const counts  = item.counts || { fases: 0, acts: 0, raps: 0 };
+  const valida  = item.status !== 'invalid';
+
+  let html = detect
     ? `<div class="alert alert-success mb-4">${ic('check-circle')}<div>
-         <strong>Código de programa detectado: ${esc(extractedProgramCode)}</strong>
-         <div class="text-xs">Se vinculará automáticamente; no necesitas seleccionarlo.</div>
+         <strong>Programa detectado: ${esc(detect.codigo)} — ${esc(detect.nombre)}</strong>
+         <div class="text-xs">Se vinculará automáticamente por el código del PDF.</div>
        </div></div>`
-    : `<div class="alert alert-warning mb-4">${ic('alert-triangle')}<div>
-         <strong>No se detectó un código de programa claro en el PDF</strong>
-         <div class="text-xs">Selecciona el programa abajo antes de confirmar la importación.</div>
-       </div></div>`;
+    : item.code
+      ? `<div class="alert alert-warning mb-4">${ic('alert-triangle')}<div>
+           <strong>El PDF indica el código ${esc(item.code)}, pero ese programa no está registrado</strong>
+           <div class="text-xs">${batch ? 'Elige el programa en la lista' : 'Elige abajo a qué programa pertenece'}, o importa primero el reporte de Sofia Plus de una de sus fichas.</div>
+         </div></div>`
+      : `<div class="alert alert-warning mb-4">${ic('alert-triangle')}<div>
+           <strong>No se detectó un código de programa claro en el PDF</strong>
+           <div class="text-xs">${batch ? 'Elige el programa en la lista' : 'Selecciona el programa abajo'} antes de confirmar la importación.</div>
+         </div></div>`;
 
-  extractedProjectData.forEach((fase, fIdx) => {
-    html += `<div class="pdf-fase">
-      <div class="pdf-fase-head">${fIdx + 1}. ${esc(fase.nombre)}</div>
-      <div class="pdf-fase-body">`;
-    (fase.actividades || []).forEach((act, aIdx) => {
-      tActs++;
-      html += `<div class="pdf-act">
-        <div class="pdf-act-title">Actividad ${fIdx + 1}.${aIdx + 1}: ${esc(act.nombre)}</div>`;
-      (act.competencias || []).forEach(comp => {
-        html += `<div class="pdf-comp">
-          <div class="pdf-comp-title">${ic('book')} ${esc(comp.codigo)} — ${esc(comp.nombre)}</div>`;
-        (comp.raps || []).forEach(rap => {
-          tRaps++;
-          html += `<div class="pdf-rap"><span class="pdf-rap-cod">${esc(rap.codigo)}</span>${esc(rap.descripcion)}</div>`;
-        });
-        html += `</div>`;
-      });
-      html += `</div>`;
-    });
-    html += `</div></div>`;
-  });
-
-  document.getElementById('pdf-kpi-fases').textContent = tFases;
-  document.getElementById('pdf-kpi-acts').textContent  = tActs;
-  document.getElementById('pdf-kpi-raps').textContent  = tRaps;
-
-  const btnSave = document.getElementById('btn-save-pdf');
-  if (tFases === 0 || (tActs === 0 && tRaps === 0)) {
+  if (!valida) {
     html = `<div class="empty-state">
       <div class="empty-icon">${ic('alert-triangle')}</div>
       <div class="empty-title">No se pudo extraer una estructura válida</div>
       <p>Intenta con otro documento o construye las fases manualmente.</p>
     </div>`;
-    btnSave.hidden = true;
   } else {
-    btnSave.hidden = false;
+    // Sin coincidencia por código se pide el programa aquí mismo, antes de la estructura
+    if (!detect && !batch) {
+      html += `<div class="form-group mb-4">
+        <label class="form-label" for="pdf-manual-prog">Programa al que pertenece esta estructura <span class="req">*</span></label>
+        <select id="pdf-manual-prog" class="form-control">${opcionesProgramas(item.idPrograma || currentProgram)}</select>
+      </div>`;
+    }
+
+    item.data.forEach((fase, fIdx) => {
+      html += `<div class="pdf-fase">
+        <div class="pdf-fase-head">${fIdx + 1}. ${esc(fase.nombre)}</div>
+        <div class="pdf-fase-body">`;
+      (fase.actividades || []).forEach((act, aIdx) => {
+        html += `<div class="pdf-act">
+          <div class="pdf-act-title">Actividad ${fIdx + 1}.${aIdx + 1}: ${esc(act.nombre)}</div>`;
+        (act.competencias || []).forEach(comp => {
+          html += `<div class="pdf-comp">
+            <div class="pdf-comp-title">${ic('book')} ${esc(comp.codigo)} — ${esc(comp.nombre)}</div>`;
+          (comp.raps || []).forEach(rap => {
+            html += `<div class="pdf-rap"><span class="pdf-rap-cod">${esc(rap.codigo)}</span>${esc(rap.descripcion)}</div>`;
+          });
+          html += `</div>`;
+        });
+        html += `</div>`;
+      });
+      html += `</div></div>`;
+    });
   }
 
-  // Si no hay código detectado ni programa elegido, exigir la selección aquí mismo
-  if (!extractedProgramCode && !document.getElementById('sel-programa').value) {
-    html += `<div class="form-group" style="margin-top:16px">
-      <label class="form-label" for="pdf-manual-prog">Selecciona el programa para esta estructura</label>
-      <select id="pdf-manual-prog" class="form-control">${document.getElementById('sel-programa').innerHTML}</select>
-    </div>`;
-  }
+  document.getElementById('pdf-kpi-fases').textContent = counts.fases;
+  document.getElementById('pdf-kpi-acts').textContent  = counts.acts;
+  document.getElementById('pdf-kpi-raps').textContent  = counts.raps;
+  document.getElementById('pdf-prog-subtitle').textContent = batch
+    ? item.name
+    : 'Verifica la estructura extraída antes de guardarla';
+
+  document.getElementById('btn-save-pdf').hidden          = batch || !valida;
+  document.getElementById('btn-pdf-preview-add').hidden   = batch;
+  document.getElementById('btn-pdf-preview-cancel').textContent = batch ? 'Volver a la lista' : 'Cancelar';
 
   document.getElementById('pdf-preview-content').innerHTML = html;
+  document.getElementById('pdf-preview-content').scrollTop = 0;
   closeModal('modal-pdf-import');
+  closeModal('modal-pdf-batch');
   openModal('modal-pdf-preview');
 }
 
 function closePdfPreview() {
   closeModal('modal-pdf-preview');
-  document.getElementById('pdf-file').value = '';
+  if (pdfPreviewMode === 'batch') {
+    openModal('modal-pdf-batch');
+  } else if (!pdfImporting) {
+    pdfQueue = [];
+  }
+}
+
+/** Envía un PDF ya interpretado. El programa va explícito: el backend lo prioriza sobre el código. */
+async function importPdfItem(item) {
+  try {
+    const resp = await fetch(`${API}?action=importar_pdf`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_programa: item.idPrograma, codigo_programa: item.code, proyecto: item.data })
+    });
+    const r = await resp.json().catch(() => ({ error: `Respuesta inválida del servidor (HTTP ${resp.status})` }));
+    if (r.success) { item.status = 'done';   item.error = null; }
+    else           { item.status = 'failed'; item.error = r.error || 'Error desconocido.'; }
+  } catch (e) {
+    item.status = 'failed';
+    item.error  = 'Ocurrió un error en la conexión.';
+  }
 }
 
 async function savePdfImport() {
-  let finalProgramCode = extractedProgramCode;
-  let finalProgramId = document.getElementById('sel-programa').value;
+  const item = pdfQueue[0];
+  if (!item || pdfImporting) return;
 
-  if (!finalProgramCode) {
-    const manual = document.getElementById('pdf-manual-prog');
-    if (manual) finalProgramId = manual.value;
-    if (!finalProgramId) return showToast('Debes seleccionar un programa para asociar el proyecto formativo.', 'warning');
-  }
+  // Antes se enviaba el programa abierto en pantalla aunque el PDF trajera su
+  // código, y como el backend prioriza id_programa el proyecto terminaba en
+  // el programa equivocado. Ahora manda la coincidencia por código.
+  const detect = programaPorCodigo(item.code);
+  item.idPrograma = detect ? String(detect.id_programa) : (document.getElementById('pdf-manual-prog')?.value || '');
+  if (!item.idPrograma) return showToast('Debes seleccionar un programa para asociar el proyecto formativo.', 'warning');
 
   const btn = document.getElementById('btn-save-pdf');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner spinner-sm"></span> Guardando…';
+  pdfImporting = true;
 
-  try {
-    const resData = await fetch(`${API}?action=importar_pdf`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id_programa: finalProgramId, codigo_programa: finalProgramCode, proyecto: extractedProjectData })
-    }).then(r => r.json());
+  await importPdfItem(item);
 
-    if (resData.success) {
-      showToast('Proyecto formativo importado y estructurado con éxito.', 'success');
-      closePdfPreview();
-      if (!document.getElementById('sel-programa').value && resData.id_programa) {
-        document.getElementById('sel-programa').value = resData.id_programa;
-      }
-      loadFases();
-    } else {
-      showToast('Error: ' + esc(resData.error), 'danger', 6000);
-    }
-  } catch (e) {
-    showToast('Ocurrió un error en la conexión.', 'danger');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = ic('save') + ' Importar proyecto';
+  pdfImporting = false;
+  btn.disabled = false;
+  btn.innerHTML = ic('save') + ' Importar proyecto';
+
+  if (item.status === 'done') {
+    showToast('Proyecto formativo importado y estructurado con éxito.', 'success');
+    closePdfPreview();
+    mostrarProgramaImportado(item.idPrograma);
+  } else {
+    showToast('Error: ' + item.error, 'danger', 6000);
   }
+}
+
+/* ── Varios PDF: tabla con el programa y el estado de cada uno ── */
+function showPdfBatch() {
+  document.getElementById('pdf-batch-result').innerHTML = '';
+  renderPdfBatch();
+  openModal('modal-pdf-batch');
+}
+
+function renderPdfBatch() {
+  // Dos PDF al mismo programa se combinan en una sola estructura
+  const porPrograma = {};
+  pdfQueue.forEach(it => {
+    if (it.status !== 'invalid' && it.idPrograma) porPrograma[it.idPrograma] = (porPrograma[it.idPrograma] || 0) + 1;
+  });
+
+  const cuenta   = fn => pdfQueue.filter(fn).length;
+  const sinProg  = cuenta(it => (it.status === 'pending' || it.status === 'failed') && !it.idPrograma);
+  const partes   = [`${pdfQueue.length} PDF`];
+  if (cuenta(it => it.status === 'invalid')) partes.push(`${cuenta(it => it.status === 'invalid')} sin estructura`);
+  if (sinProg)                               partes.push(`${sinProg} sin programa`);
+  if (cuenta(it => it.status === 'done'))    partes.push(`${cuenta(it => it.status === 'done')} importados`);
+  if (cuenta(it => it.status === 'failed'))  partes.push(`${cuenta(it => it.status === 'failed')} con error`);
+  document.getElementById('pdf-batch-sub').textContent = partes.join(' · ');
+
+  document.getElementById('pdf-batch-tbody').innerHTML = pdfQueue.map((it, i) => {
+    const prog     = programaPorId(it.idPrograma);
+    const detect   = programaPorCodigo(it.code);
+    const editable = !pdfImporting && (it.status === 'pending' || it.status === 'failed');
+
+    let programa;
+    if (it.status === 'invalid') {
+      programa = '<span class="text-muted">—</span>';
+    } else if (!editable) {
+      programa = prog ? `<span class="mono">${esc(prog.codigo)}</span> ${esc(prog.nombre)}` : '—';
+    } else {
+      const nota = !it.idPrograma
+        ? `<div class="text-xs text-warning">${it.code ? `El código ${esc(it.code)} no está registrado: elígelo` : 'No se detectó el código: elígelo'}</div>`
+        : detect && String(detect.id_programa) === it.idPrograma
+          ? '<div class="text-xs text-success">Detectado por el código del PDF</div>'
+          : '<div class="text-xs text-muted">Elegido a mano</div>';
+      const yaTiene = prog && prog.fases > 0
+        ? `<div class="text-xs text-muted">Ya tiene ${prog.fases} fase${prog.fases === 1 ? '' : 's'}: se combinará</div>`
+        : '';
+      programa = `<select class="form-control" style="font-size:12px;padding:5px 8px" onchange="setPdfPrograma(${i}, this.value)"
+                    aria-label="Programa de ${esc(it.name)}">${opcionesProgramas(it.idPrograma)}</select>${nota}${yaTiene}`;
+    }
+
+    const estructura = it.counts && it.status !== 'invalid'
+      ? `${it.counts.fases} fases · ${it.counts.acts} act. · ${it.counts.raps} RAPs`
+      : '—';
+
+    let estado;
+    switch (it.status) {
+      case 'invalid':   estado = `<span class="badge badge-danger">Sin estructura</span><div class="text-xs text-danger">${esc(it.error)}</div>`; break;
+      case 'importing': estado = `<span class="badge badge-info"><span class="spinner spinner-sm"></span> Importando…</span>`; break;
+      case 'done':      estado = `<span class="badge badge-success">Importado</span>`; break;
+      case 'failed':    estado = `<span class="badge badge-danger">Error</span><div class="text-xs text-danger">${esc(it.error)}</div>`; break;
+      default:
+        estado = !it.idPrograma
+          ? '<span class="badge badge-warning">Falta programa</span>'
+          : porPrograma[it.idPrograma] > 1
+            ? '<span class="badge badge-warning" title="Otro PDF va al mismo programa; las estructuras se combinarán">Programa repetido</span>'
+            : '<span class="badge badge-muted">Listo</span>';
+    }
+
+    const ver    = it.data ? `<button class="btn btn-ghost btn-sm" onclick="showPdfPreview(pdfQueue[${i}], 'batch')">${ic('eye')} Ver</button>` : '';
+    const quitar = !pdfImporting && it.status !== 'done'
+      ? `<button class="btn btn-ghost btn-sm" onclick="removePdfItem(${i})" aria-label="Quitar ${esc(it.name)}">${ic('x')}</button>`
+      : '';
+
+    return `<tr>
+      <td class="truncate" style="max-width:170px" title="${esc(it.name)}">${esc(it.name)}</td>
+      <td>${programa}</td>
+      <td class="text-secondary" style="white-space:nowrap">${estructura}</td>
+      <td>${estado}</td>
+      <td class="col-actions">${ver}${quitar}</td>
+    </tr>`;
+  }).join('');
+
+  updatePdfBatchFooter();
+}
+
+function setPdfPrograma(i, idPrograma) {
+  if (pdfImporting || !pdfQueue[i]) return;
+  pdfQueue[i].idPrograma = idPrograma;
+  renderPdfBatch();
+}
+
+function removePdfItem(i) {
+  if (pdfImporting) return;
+  pdfQueue.splice(i, 1);
+  if (!pdfQueue.length) return cancelPdfBatch();
+  renderPdfBatch();
+}
+
+function updatePdfBatchFooter() {
+  const btn    = document.getElementById('btn-pdf-batch-import');
+  const cancel = document.getElementById('btn-pdf-batch-cancel');
+  const cola   = pdfQueue.filter(it => (it.status === 'pending' || it.status === 'failed') && it.idPrograma);
+  const done   = pdfQueue.some(it => it.status === 'done');
+
+  document.getElementById('btn-pdf-add').disabled = pdfImporting || pdfReading;
+  cancel.disabled    = pdfImporting;
+  cancel.textContent = done ? 'Cerrar' : 'Cancelar';
+  if (pdfImporting) return;
+
+  const hayFallidos = cola.some(it => it.status === 'failed') && !cola.some(it => it.status === 'pending');
+  btn.hidden    = !pdfQueue.some(it => it.status === 'pending' || it.status === 'failed');
+  btn.disabled  = cola.length === 0;
+  btn.innerHTML = ic('upload-cloud') + (hayFallidos
+    ? ` Reintentar ${cola.length} con error`
+    : ` Importar ${cola.length} ${cola.length === 1 ? 'proyecto' : 'proyectos'}`);
+}
+
+async function doPdfBatchImport() {
+  const cola = pdfQueue.filter(it => (it.status === 'pending' || it.status === 'failed') && it.idPrograma);
+  if (!cola.length) return showToast('Elige el programa de al menos un PDF para importarlo.', 'warning');
+
+  const btn = document.getElementById('btn-pdf-batch-import');
+  const res = document.getElementById('pdf-batch-result');
+  res.innerHTML = '';
+  pdfImporting = true;
+  btn.disabled = true;
+
+  // En serie: cada proyecto es una transacción en el servidor
+  for (const [i, item] of cola.entries()) {
+    btn.innerHTML = `<span class="spinner spinner-sm"></span> Importando ${i + 1} de ${cola.length}…`;
+    item.status = 'importing';
+    renderPdfBatch();
+    await importPdfItem(item);
+  }
+
+  pdfImporting = false;
+  renderPdfBatch();
+
+  const ok       = cola.filter(it => it.status === 'done');
+  const fallidos = cola.length - ok.length;
+  const pendSin  = pdfQueue.filter(it => it.status === 'pending' && !it.idPrograma).length;
+  res.innerHTML = `<div class="alert ${fallidos ? 'alert-warning' : 'alert-success'}">${ic(fallidos ? 'alert-triangle' : 'check-circle')}<div>
+      <strong>${ok.length} de ${cola.length} proyectos importados</strong>${fallidos ? ` — ${fallidos} con error (puedes reintentarlos)` : ''}
+      ${pendSin ? `<br>${pendSin} PDF siguen sin programa: elígelo para importarlos.` : ''}
+    </div></div>`;
+  showToast(`${ok.length} de ${cola.length} proyectos importados.`, fallidos ? 'warning' : 'success');
+
+  if (ok.length) {
+    // Si el programa abierto recibió un proyecto se queda; si no, se abre el primero importado
+    const abierto = ok.some(it => it.idPrograma === String(currentProgram));
+    await mostrarProgramaImportado(abierto ? currentProgram : ok[0].idPrograma);
+    renderPdfBatch(); // los recuentos de fases de cada programa cambiaron
+  }
+}
+
+function cancelPdfBatch() {
+  if (pdfImporting) return;
+  closeModal('modal-pdf-batch');
+  pdfQueue = [];
 }
 
 /* ================================================================
@@ -927,11 +1275,28 @@ async function borrarEstructura() {
   );
 }
 
-/* Arrastrar y soltar el PDF */
+/* Arrastrar y soltar PDF: en la zona de carga, en la vista previa y sobre la lista */
 const pdfDz = document.getElementById('pdf-dropzone');
 pdfDz.addEventListener('dragover', e => { e.preventDefault(); pdfDz.classList.add('dragover'); });
 pdfDz.addEventListener('dragleave', () => pdfDz.classList.remove('dragover'));
-pdfDz.addEventListener('drop', e => { e.preventDefault(); pdfDz.classList.remove('dragover'); handlePDFFile(e.dataTransfer.files[0]); });
+pdfDz.addEventListener('drop', e => { e.preventDefault(); pdfDz.classList.remove('dragover'); handlePDFFiles(e.dataTransfer.files); });
+
+['pdf-batch-body', 'pdf-preview-content'].forEach(id => {
+  const zona = document.getElementById(id);
+  // preventDefault siempre: sin él el navegador abre el PDF soltado en la pestaña
+  zona.addEventListener('dragover', e => {
+    e.preventDefault();
+    const permitido = !pdfImporting && (id === 'pdf-batch-body' || pdfPreviewMode === 'single');
+    zona.classList.toggle('is-dragover', permitido);
+  });
+  zona.addEventListener('dragleave', e => { if (!zona.contains(e.relatedTarget)) zona.classList.remove('is-dragover'); });
+  zona.addEventListener('drop', e => {
+    e.preventDefault();
+    zona.classList.remove('is-dragover');
+    if (id === 'pdf-preview-content' && pdfPreviewMode === 'batch') return;
+    handlePDFFiles(e.dataTransfer.files);
+  });
+});
 
 init();
 </script>

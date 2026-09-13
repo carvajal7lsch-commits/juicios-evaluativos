@@ -892,6 +892,19 @@ textarea.form-control { min-height: 76px; resize: vertical; line-height: 1.5; }
 .dropzone-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
 .dropzone-sub { font-size: 12.5px; color: var(--text-secondary); }
 
+/* Dropzone que acepta varios archivos: se anuncia antes de soltar nada */
+.dropzone-badge { margin-bottom: 12px; }
+.dropzone-badge .ic { width: 13px; height: 13px; }
+.dropzone-pick { margin-top: 14px; pointer-events: none; }
+.dropzone-tip { margin-top: 10px; font-size: 11.5px; color: var(--text-muted); }
+.dropzone-tip kbd {
+  font-family: inherit; font-size: 10.5px; font-weight: 600;
+  padding: 1px 5px; border: 1px solid var(--border-strong); border-bottom-width: 2px;
+  border-radius: var(--radius-sm); background: var(--bg-subtle); color: var(--text-secondary);
+}
+/* Soltar más archivos sobre un modal que ya tiene una lista cargada */
+.modal-body.is-dragover { outline: 2px dashed var(--brand); outline-offset: -8px; background: var(--brand-soft); }
+
 /* ── Modales ── */
 .modal-overlay {
   position: fixed; inset: 0;
